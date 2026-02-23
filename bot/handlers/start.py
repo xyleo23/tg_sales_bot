@@ -2,16 +2,16 @@
 from aiogram import F, Router
 from aiogram.types import Message
 
+from bot.keyboards import main_menu_keyboard
+
 start_router = Router(name="start")
 
 MAIN_MENU_TEXT = "👋 TG Sales Bot — главное меню"
 
 
 @start_router.message(F.text == "/start")
-async def cmd_start(message: Message) -> None:
+async def cmd_start(message: Message, user=None) -> None:
     await message.answer(
-        "👋 TG Sales Bot — рассылка и поиск клиентов в Telegram.\n\n"
-        "Команды для админов:\n"
-        "/add_session — загрузить .session аккаунт\n"
-        "/add_audience — загрузить CSV с аудиторией"
+        MAIN_MENU_TEXT,
+        reply_markup=main_menu_keyboard(user),
     )

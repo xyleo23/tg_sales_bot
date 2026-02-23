@@ -37,11 +37,8 @@ async def cmd_cancel(message: Message, state: FSMContext) -> None:
         await message.answer("Действие отменено.")
 
 
-@admin_router.message(F.text == "/add_session")
+@admin_router.message(F.text == "/add_session", F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
 async def cmd_add_session(message: Message, state: FSMContext) -> None:
-    if not is_super_admin(message.from_user.id):
-        await message.answer("❌ Доступ запрещён. Только для супер-админов.")
-        return
     await state.set_state(AdminState.waiting_for_session)
     await message.answer("Пришлите файл .session")
 
@@ -156,11 +153,8 @@ async def process_session_other(message: Message) -> None:
 # --- /add_audience ---
 
 
-@admin_router.message(F.text == "/add_audience")
+@admin_router.message(F.text == "/add_audience", F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
 async def cmd_add_audience(message: Message, state: FSMContext) -> None:
-    if not is_super_admin(message.from_user.id):
-        await message.answer("❌ Доступ запрещён. Только для супер-админов.")
-        return
     await state.set_state(AdminState.waiting_for_csv)
     await message.answer(
         "Пришлите CSV файл со списком пользователей.\n"
