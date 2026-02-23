@@ -37,3 +37,6 @@ class WarmingStates(StatesGroup):
 class AdminStates(StatesGroup):
     wait_extend = State()
     wait_change_role = State()
+
+
+from bot.states.masslooking import MasslookingState

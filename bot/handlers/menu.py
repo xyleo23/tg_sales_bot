@@ -35,7 +35,7 @@ async def menu_callback(callback: CallbackQuery, user, subscription):
         )
         return
 
-    # Заглушки (inviting, warming — свои роутеры)
+    # Заглушки (inviting, warming, masslooking — свои роутеры)
     if action == "autoposting":
         await callback.message.answer("📝 Автопостинг — в разработке.")
     else:

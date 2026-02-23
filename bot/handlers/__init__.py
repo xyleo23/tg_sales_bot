@@ -6,6 +6,7 @@ from bot.handlers.audience import router as audience_router
 from bot.handlers.mailing import router as mailing_router
 from bot.handlers.inviting import router as inviting_router
 from bot.handlers.warming import router as warming_router
+from bot.handlers.masslooking import router as masslooking_router
 from bot.handlers.logs import router as logs_router
 from bot.handlers.admin import router as admin_router
 from bot.handlers.menu import router as menu_router
@@ -21,4 +22,5 @@ def setup_routers(dp) -> None:
     dp.include_router(mailing_router)
     dp.include_router(inviting_router)
     dp.include_router(warming_router)
+    dp.include_router(masslooking_router)
     dp.include_router(menu_router)
