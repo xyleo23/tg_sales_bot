@@ -4,6 +4,8 @@ from aiogram.types import Message
 
 start_router = Router(name="start")
 
+MAIN_MENU_TEXT = "👋 TG Sales Bot — главное меню"
+
 
 @start_router.message(F.text == "/start")
 async def cmd_start(message: Message) -> None:

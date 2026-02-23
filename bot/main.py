@@ -12,6 +12,7 @@ from aiogram import Bot, Dispatcher
 
 from bot.config import BOT_TOKEN
 from bot.handlers import router
+from bot.middlewares import DbSessionMiddleware
 from core.db.session import init_db
 
 logging.basicConfig(level=logging.INFO)
@@ -22,6 +23,7 @@ async def main() -> None:
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
+    dp.update.outer_middleware(DbSessionMiddleware())
     dp.include_router(router)
 
     await dp.start_polling(bot)

@@ -18,6 +18,16 @@ _raw = os.getenv("SUPER_ADMIN_IDS", "")
 if _raw:
     SUPER_ADMIN_IDS = [int(x.strip()) for x in _raw.split(",") if x.strip().isdigit()]
 
+ADMIN_IDS: list[int] = []
+_raw = os.getenv("ADMIN_IDS", "")
+if _raw:
+    ADMIN_IDS = [int(x.strip()) for x in _raw.split(",") if x.strip().isdigit()]
+
+TESTER_IDS: list[int] = []
+_raw = os.getenv("TESTER_IDS", "")
+if _raw:
+    TESTER_IDS = [int(x.strip()) for x in _raw.split(",") if x.strip().isdigit()]
+
 # Telegram API (для Telethon)
 TG_API_ID = int(os.getenv("TG_API_ID", "0"))
 TG_API_HASH = os.getenv("TG_API_HASH", "")
@@ -25,3 +35,12 @@ TG_API_HASH = os.getenv("TG_API_HASH", "")
 # Папка для .session файлов
 DATA_DIR = BASE_DIR / "data"
 SESSIONS_DIR = DATA_DIR / "sessions"
+
+# Триал для новых пользователей (дней)
+TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
+
+# Оплата: нативные Telegram Invoices (Bot Payments API)
+# Получить Provider Token: @BotFather → Payments → YooKassa (или другой провайдер)
+PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
+SUBSCRIPTION_PRICE = 299.0  # руб
+SUBSCRIPTION_DAYS = 30
