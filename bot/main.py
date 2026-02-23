@@ -60,6 +60,18 @@ async def global_error_handler(event):
     logger.exception("Unhandled error: %s", event.exception)
 
 
+async def start_webhook_server(app, port: int) -> None:
+    """Запуск aiohttp-сервера вебхуков ЮKassa как фоновой задачи."""
+    from aiohttp import web
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info("Webhook ЮKassa запущен на порту %s", port)
+    while True:
+        await asyncio.sleep(3600)
+
+
 async def main():
     if not BOT_TOKEN:
         logger.error("Задайте BOT_TOKEN в .env")
@@ -70,18 +82,14 @@ async def main():
     print(f"Бот @{me.username} запущен. TG_API: {'OK' if TG_API_ID else 'NO'}")
     logger.info("Бот запущен (polling)")
 
-    # Webhook ЮKassa (опционально)
+    # Webhook ЮKassa — запуск в фоне, чтобы не блокировать polling
     if YOOKASSA_SHOP_ID and YOOKASSA_WEBHOOK_PORT:
-        from aiohttp import web
         from core.payment_webhook import create_webhook_app
         app = create_webhook_app()
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", YOOKASSA_WEBHOOK_PORT)
-        await site.start()
-        logger.info("Webhook ЮKassa на порту %s", YOOKASSA_WEBHOOK_PORT)
+        asyncio.create_task(start_webhook_server(app, YOOKASSA_WEBHOOK_PORT))
 
-    await dp.start_polling(bot, drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
