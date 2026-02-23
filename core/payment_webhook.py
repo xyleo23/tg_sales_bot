@@ -6,7 +6,7 @@ Webhook для ЮKassa: при успешной оплате — продлен�
 import logging
 from aiohttp import web
 
-logger = logging.getLogger(__name__) = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 async def handle_yookassa_webhook(request: web.Request) -> web.Response:

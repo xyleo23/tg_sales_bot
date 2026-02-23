@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _env_dir = Path(__file__).resolve().parent.parent
+os.makedirs(_env_dir / "data", exist_ok=True)
 load_dotenv(_env_dir / ".env")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
