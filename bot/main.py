@@ -60,16 +60,20 @@ async def global_error_handler(event):
     logger.exception("Unhandled error: %s", event.exception)
 
 
-async def start_webhook_server(app, port: int) -> None:
-    """Запуск aiohttp-сервера вебхуков ЮKassa как фоновой задачи."""
+async def start_webhook_server(app, port: int, shutdown_event: asyncio.Event) -> None:
+    """Запуск aiohttp-сервера вебхуков ЮKassa как фоновой задачи.
+    При срабатывании shutdown_event сервер останавливается и ресурсы освобождаются."""
     from aiohttp import web
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
     logger.info("Webhook ЮKassa запущен на порту %s", port)
-    while True:
-        await asyncio.sleep(3600)
+    try:
+        await shutdown_event.wait()
+    finally:
+        await runner.cleanup()
+        logger.info("Webhook ЮKassa остановлен")
 
 
 async def main():
@@ -82,14 +86,31 @@ async def main():
     print(f"Бот @{me.username} запущен. TG_API: {'OK' if TG_API_ID else 'NO'}")
     logger.info("Бот запущен (polling)")
 
-    # Webhook ЮKassa — запуск в фоне, чтобы не блокировать polling
+    shutdown_event = asyncio.Event()
+    webhook_task = None
+
+    # Webhook ЮKassa — запуск в фоне, чтобы не конфликтовать с сессией aiogram
     if YOOKASSA_SHOP_ID and YOOKASSA_WEBHOOK_PORT:
         from core.payment_webhook import create_webhook_app
         app = create_webhook_app()
-        asyncio.create_task(start_webhook_server(app, YOOKASSA_WEBHOOK_PORT))
+        webhook_task = asyncio.create_task(
+            start_webhook_server(app, YOOKASSA_WEBHOOK_PORT, shutdown_event)
+        )
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    try:
+        # Строгая очистка старых вебхуков и зависших апдейтов перед polling
+        await bot.delete_webhook(drop_pending_updates=True)
+        await asyncio.sleep(1)  # даём Telegram обработать сброс
+        await dp.start_polling(bot)
+    finally:
+        shutdown_event.set()
+        if webhook_task is not None:
+            try:
+                await asyncio.wait_for(webhook_task, timeout=5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+        await bot.session.close()
+        logger.info("Бот остановлен")
 
 
 if __name__ == "__main__":
