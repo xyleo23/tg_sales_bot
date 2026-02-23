@@ -1,30 +1,5 @@
-# Telegram Bot (интерфейс)
 aiogram>=3.13.0
-
-# Работа от имени пользователя (рассылка, парсинг)
 telethon>=1.36.0
-
-# БД
 sqlalchemy[asyncio]>=2.0.0
 aiosqlite>=0.19.0
-asyncpg>=0.29.0
-
-# Очереди (выбрать один вариант)
-redis>=5.0.0
-# celery>=5.3.0
-arq>=0.25.0
-
-# AI (как в B2B Outreach)
-openai>=1.0.0
-# anthropic  # опционально
-
-# Утилиты
 python-dotenv>=1.0.0
-loguru>=0.7.0
-
-# Оплата
-yookassa>=3.0.0
-aiohttp>=3.9.0
-
-# QR-код для создания сессии
-qrcode[pil]>=7.0

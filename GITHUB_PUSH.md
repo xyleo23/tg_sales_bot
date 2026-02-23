@@ -10,12 +10,10 @@
 
 ## 2. Подключите remote и отправьте код
 
-Скопируйте URL вашего репо (например `https://github.com/ваш_логин/tg_sales_bot.git`), затем:
-
 ```powershell
 cd c:\Users\Admin\.cursor\tg_sales_bot
 
-git remote add origin https://github.com/ВАШ_ЛОГИН/tg_sales_bot.git
+git remote add origin https://github.com/xyleo23/tg_sales_bot.git
 git branch -M main
 git push -u origin main
 ```
@@ -25,7 +23,7 @@ git push -u origin main
 ## 3. На сервере
 
 ```bash
-git clone https://github.com/ВАШ_ЛОГИН/tg_sales_bot.git
+git clone https://github.com/xyleo23/tg_sales_bot.git
 cd tg_sales_bot
 cp .env.example .env
 nano .env   # заполните BOT_TOKEN, TG_API_ID, TG_API_HASH, SUPER_ADMIN_IDS

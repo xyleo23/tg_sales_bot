@@ -1,29 +1,15 @@
-"""/start и главное меню."""
-import logging
-from aiogram import Router, F
-from aiogram.filters import CommandStart
+"""Стартовый хендлер."""
+from aiogram import F, Router
 from aiogram.types import Message
 
-from bot.keyboards import main_menu_keyboard
-
-router = Router(name="start")
-logger = logging.getLogger(__name__)
-
-MAIN_MENU_TEXT = """<b>Главное меню</b>
-
-С помощью этого бота вы можете:
-1. Собрать аудиторию из чатов
-2. Добавить людей в свою группу
-3. Рассылка в личку с ИИ
-
-Для новых пользователей — пробный период.
-Подписка: раздел «⚡️ Подписка»."""
+start_router = Router(name="start")
 
 
-@router.message(CommandStart())
-async def cmd_start(message: Message, user=None):
-    logger.info("cmd_start: user_id=%s", message.from_user.id if message.from_user else None)
+@start_router.message(F.text == "/start")
+async def cmd_start(message: Message) -> None:
     await message.answer(
-        MAIN_MENU_TEXT,
-        reply_markup=main_menu_keyboard(user),
+        "👋 TG Sales Bot — рассылка и поиск клиентов в Telegram.\n\n"
+        "Команды для админов:\n"
+        "/add_session — загрузить .session аккаунт\n"
+        "/add_audience — загрузить CSV с аудиторией"
     )

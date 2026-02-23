@@ -1,124 +1,259 @@
-"""Админ-панель: super_admin (полная), admin (ограниченная)."""
-import re
-from aiogram import Router, F
+"""Админ-хендлеры: загрузка сессий и создание аудиторий."""
+import csv
+import sys
+from datetime import datetime
+from io import StringIO
+from pathlib import Path
+
+from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.types import InlineKeyboardButton
+from aiogram.types import Document, Message
+from sqlalchemy import select
+from telethon import TelegramClient
+from telethon.errors import AuthKeyUnregisteredError, SessionPasswordNeededError
 
-from core.auth import can_access_admin_panel, can_access_finance, can_change_roles, is_super_admin
-from core.db.repos import user_repo, subscription_repo
-from bot.states import AdminStates
+# Добавляем корень проекта в path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-router = Router(name="admin")
+from bot.config import DATA_DIR, SUPER_ADMIN_IDS, SESSIONS_DIR, TG_API_ID, TG_API_HASH
+from bot.states import AdminState
+from core.db.models import Account, Audience, AudienceMember, User
+
+admin_router = Router(name="admin")
 
 
-@router.message(F.text == "/admin")
-async def admin_panel(message: Message, user, session, state: FSMContext):
-    if not can_access_admin_panel(user):
+def is_super_admin(user_id: int) -> bool:
+    return user_id in SUPER_ADMIN_IDS
+
+
+# --- /add_session ---
+
+
+@admin_router.message(F.text.in_(["/cancel", "Отмена"]))
+async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    current = await state.get_state()
+    if current:
+        await state.clear()
+        await message.answer("Действие отменено.")
+
+
+@admin_router.message(F.text == "/add_session")
+async def cmd_add_session(message: Message, state: FSMContext) -> None:
+    if not is_super_admin(message.from_user.id):
+        await message.answer("❌ Доступ запрещён. Только для супер-админов.")
         return
-    await state.clear()
-    if is_super_admin(user):
-        text = "🔐 <b>Панель супер-админа</b>\n\nДоступны все функции."
-    else:
-        text = "🔐 <b>Панель админа</b>\n\nДоступ ограничен (без финансов и смены ролей)."
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="👥 Список пользователей", callback_data="admin_list_users"),
-    )
-    if can_access_finance(user):
-        builder.row(
-            InlineKeyboardButton(text="💰 Продлить подписку", callback_data="admin_extend_sub"),
+    await state.set_state(AdminState.waiting_for_session)
+    await message.answer("Пришлите файл .session")
+
+
+@admin_router.message(AdminState.waiting_for_session, F.document)
+async def process_session_document(
+    message: Message, state: FSMContext, bot: Bot
+) -> None:
+    doc: Document = message.document
+    if not doc.file_name or not doc.file_name.lower().endswith(".session"):
+        await message.answer("❌ Нужен файл с расширением .session")
+        return
+
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = f"{message.from_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.session"
+    session_path = SESSIONS_DIR / safe_name
+
+    try:
+        await bot.download(doc.file_id, destination=session_path)
+    except Exception as e:
+        await message.answer(f"❌ Ошибка загрузки файла: {e}")
+        return
+
+    if not TG_API_ID or not TG_API_HASH:
+        session_path.unlink(missing_ok=True)
+        await state.clear()
+        await message.answer(
+            "❌ TG_API_ID и TG_API_HASH не заданы в .env. "
+            "Получите их на https://my.telegram.org"
         )
-    if can_change_roles(user):
-        builder.row(
-            InlineKeyboardButton(text="🔄 Изменить роль", callback_data="admin_change_role"),
+        return
+
+    client = TelegramClient(
+        str(session_path.with_suffix("")),
+        TG_API_ID,
+        TG_API_HASH,
+    )
+
+    try:
+        await client.connect()
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            session_path.unlink(missing_ok=True)
+            # Удаляем также .session-journal если есть
+            for p in session_path.parent.glob(session_path.name + "*"):
+                p.unlink(missing_ok=True)
+            await state.clear()
+            await message.answer(
+                "❌ Сессия невалидна: требуется код авторизации. "
+                "Используйте авторизованную сессию."
+            )
+            return
+
+        me = await client.get_me()
+        await client.disconnect()
+    except (AuthKeyUnregisteredError, SessionPasswordNeededError) as e:
+        await client.disconnect()
+        session_path.unlink(missing_ok=True)
+        for p in session_path.parent.glob(session_path.name + "*"):
+            p.unlink(missing_ok=True)
+        await state.clear()
+        await message.answer(f"❌ Сессия невалидна: {e}")
+        return
+    except Exception as e:
+        await client.disconnect()
+        session_path.unlink(missing_ok=True)
+        for p in session_path.parent.glob(session_path.name + "*"):
+            p.unlink(missing_ok=True)
+        await state.clear()
+        await message.answer(f"❌ Ошибка проверки сессии: {e}")
+        return
+
+    # Сохраняем в БД (нужна сессия)
+    from core.db.session import async_session_factory
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
         )
-    await message.answer(text, reply_markup=builder.as_markup())
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+            )
+            db.add(user)
+            await db.flush()
 
+        account = Account(
+            user_id=user.id,
+            name=me.first_name or "",
+            username=me.username or None,
+            phone=me.phone or None,
+            session_filename=safe_name,
+        )
+        db.add(account)
+        await db.commit()
 
-@router.callback_query(F.data == "admin_list_users")
-async def admin_list_users(callback: CallbackQuery, user, session):
-    await callback.answer()
-    if not can_access_admin_panel(user):
-        return
-    users = await user_repo.list_all(session, limit=50)
-    lines = []
-    for u in users:
-        sub = await subscription_repo.get_by_user_id(session, u.id)
-        sub_str = f"до {sub.expires_at.strftime('%Y-%m-%d')}" if sub else "—"
-        lines.append(f"• id{u.id} @{u.username or '—'} {u.role} sub:{sub_str}")
-    text = "👥 <b>Пользователи</b> (последние 50):\n\n" + "\n".join(lines[:30])
-    if len(lines) > 30:
-        text += f"\n\n... и ещё {len(lines) - 30}"
-    await callback.message.answer(text)
-
-
-@router.callback_query(F.data == "admin_extend_sub")
-async def admin_extend_sub(callback: CallbackQuery, user, session, state: FSMContext):
-    await callback.answer()
-    if not can_access_finance(user):
-        await callback.message.answer("⛔ Нет доступа.")
-        return
-    await state.set_state(AdminStates.wait_extend)
-    await callback.message.answer(
-        "Введите: <code>user_id days</code>\n"
-        "Например: <code>5 30</code> — продлить пользователю id=5 на 30 дней.\n"
-        "Отмена: /admin"
+    await state.clear()
+    username_display = f"@{me.username}" if me.username else (me.first_name or "без имени")
+    await message.answer(
+        f"✅ Аккаунт {username_display} успешно добавлен и готов к масслукингу!"
     )
 
 
-@router.message(AdminStates.wait_extend, F.text)
-async def admin_extend_apply(message: Message, user, session, state: FSMContext):
-    if not can_access_finance(user):
-        await state.clear()
-        return
-    m = re.match(r"^\s*(\d+)\s+(\d+)\s*$", message.text or "")
-    if not m:
-        await message.answer("Неверный формат. Введите: <code>user_id days</code>")
-        return
-    target_id, days = int(m.group(1)), int(m.group(2))
-    if days < 1 or days > 365:
-        await message.answer("Дней должно быть от 1 до 365.")
-        return
-    sub = await subscription_repo.extend_or_create(session, target_id, "admin_extend", days)
-    await state.clear()
-    await message.answer(f"✅ Подписка пользователя id={target_id} продлена до {sub.expires_at.strftime('%Y-%m-%d')}.")
+@admin_router.message(AdminState.waiting_for_session)
+async def process_session_other(message: Message) -> None:
+    await message.answer("Пришлите документ с расширением .session или /cancel для отмены.")
 
 
-@router.callback_query(F.data == "admin_change_role")
-async def admin_change_role(callback: CallbackQuery, user, session, state: FSMContext):
-    await callback.answer()
-    if not can_change_roles(user):
-        await callback.message.answer("⛔ Нет доступа.")
+# --- /add_audience ---
+
+
+@admin_router.message(F.text == "/add_audience")
+async def cmd_add_audience(message: Message, state: FSMContext) -> None:
+    if not is_super_admin(message.from_user.id):
+        await message.answer("❌ Доступ запрещён. Только для супер-админов.")
         return
-    await state.set_state(AdminStates.wait_change_role)
-    await callback.message.answer(
-        "Введите: <code>user_id role</code>\n"
-        "Роли: user, tester, admin\n"
-        "Например: <code>5 tester</code>\n"
-        "Отмена: /admin"
+    await state.set_state(AdminState.waiting_for_csv)
+    await message.answer(
+        "Пришлите CSV файл со списком пользователей.\n"
+        "Формат: username, phone, telegram_id (одна строка — один юзер)"
     )
 
 
-@router.message(AdminStates.wait_change_role, F.text)
-async def admin_change_role_apply(message: Message, user, session, state: FSMContext):
-    if not can_change_roles(user):
+@admin_router.message(AdminState.waiting_for_csv, F.document)
+async def process_csv_document(
+    message: Message, state: FSMContext, bot: Bot
+) -> None:
+    doc: Document = message.document
+    if not doc.file_name or not doc.file_name.lower().endswith(".csv"):
+        await message.answer("❌ Нужен файл с расширением .csv")
+        return
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    csv_path = DATA_DIR / f"csv_{message.from_user.id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
+
+    try:
+        await bot.download(doc.file_id, destination=csv_path)
+    except Exception as e:
+        await message.answer(f"❌ Ошибка загрузки файла: {e}")
+        return
+
+    try:
+        content = csv_path.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:
+        csv_path.unlink(missing_ok=True)
+        await message.answer(f"❌ Ошибка чтения файла: {e}")
         await state.clear()
         return
-    m = re.match(r"^\s*(\d+)\s+(user|tester|admin)\s*$", (message.text or "").strip().lower())
-    if not m:
-        await message.answer("Неверный формат. Введите: <code>user_id role</code> (роли: user, tester, admin)")
-        return
-    target_id, role = int(m.group(1)), m.group(2)
-    target_user = await user_repo.get_by_id(session, target_id)
-    if target_user and target_user.role == "super_admin":
-        await message.answer("⛔ Роль супер-админа задаётся только в .env (SUPER_ADMIN_IDS).")
-        await state.clear()
-        return
-    updated = await user_repo.update_role(session, target_id, role)
+
+    csv_path.unlink(missing_ok=True)
+
+    reader = csv.reader(StringIO(content))
+    rows = list(reader)
+
+    audience_name = Path(doc.file_name or "audience").stem or datetime.now().strftime("%Y-%m-%d_%H-%M")
+    added = 0
+
+    from core.db.session import async_session_factory
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+            )
+            db.add(user)
+            await db.flush()
+
+        audience = Audience(
+            user_id=user.id,
+            name=audience_name,
+            source="csv",
+        )
+        db.add(audience)
+        await db.flush()
+
+        for row in rows:
+            if not row:
+                continue
+            username = row[0].strip() if len(row) > 0 else None
+            phone = row[1].strip() if len(row) > 1 else None
+            try:
+                telegram_id = int(row[2].strip()) if len(row) > 2 and row[2].strip() else None
+            except (ValueError, TypeError):
+                telegram_id = None
+
+            if not username and not phone and not telegram_id:
+                continue
+
+            member = AudienceMember(
+                audience_id=audience.id,
+                username=username or None,
+                phone=phone or None,
+                telegram_id=telegram_id,
+            )
+            db.add(member)
+            added += 1
+
+        await db.commit()
+
     await state.clear()
-    if updated:
-        await message.answer(f"✅ Роль пользователя id={target_id} изменена на {role}.")
-    else:
-        await message.answer("Пользователь не найден.")
+    await message.answer(f"✅ Аудитория создана! Добавлено {added} пользователей.")
+
+
+@admin_router.message(AdminState.waiting_for_csv)
+async def process_csv_other(message: Message) -> None:
+    await message.answer("Пришлите CSV файл или /cancel для отмены.")

@@ -4,7 +4,7 @@
 
 ```bash
 cd /opt  # или ваша папка
-git clone https://github.com/YOUR_USERNAME/tg_sales_bot.git
+git clone https://github.com/xyleo23/tg_sales_bot.git
 cd tg_sales_bot
 ```
 
