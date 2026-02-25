@@ -44,3 +44,9 @@ TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
 PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
 SUBSCRIPTION_PRICE = 299.0  # руб
 SUBSCRIPTION_DAYS = 30
+
+# Задержки (секунды) — для рассылки и инвайтинга
+MAILING_DELAY_MIN = int(os.getenv("MAILING_DELAY_MIN", "1"))
+MAILING_DELAY_MAX = int(os.getenv("MAILING_DELAY_MAX", "3"))
+MAILING_MAX_PER_ACCOUNT = int(os.getenv("MAILING_MAX_PER_ACCOUNT", "20"))
+INVITE_DELAY_SEC = int(os.getenv("INVITE_DELAY_SEC", "3"))
