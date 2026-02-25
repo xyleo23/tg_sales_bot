@@ -3,6 +3,9 @@
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
+from bot.handlers.start import MAIN_MENU_TEXT
+from bot.keyboards import main_menu_keyboard
+
 router = Router()
 
 # --- Клавиатуры ---
@@ -12,6 +15,7 @@ def instructions_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="📗 Читать инструкции", url="https://t.me/")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
         ]
     )
 
@@ -20,6 +24,7 @@ def community_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🙋 Вступить в чат", url="https://t.me/")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
         ]
     )
 
@@ -29,7 +34,7 @@ def buy_account_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🛒 Купить аккаунт", callback_data="shop_buy")],
             [InlineKeyboardButton(text="💰 Пополнить баланс", callback_data="shop_add_balance")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="menu_back")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_to_main")],
         ]
     )
 
@@ -94,7 +99,17 @@ async def menu_buy_account(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-# --- Назад в меню (если обрабатывается здесь) ---
+# --- Назад в главное меню ---
+
+
+@router.callback_query(F.data == "back_to_main")
+async def back_to_main_handler(callback: CallbackQuery, user=None) -> None:
+    """Возврат в главное меню по кнопке «⬅️ Назад»."""
+    await callback.message.edit_text(
+        MAIN_MENU_TEXT,
+        reply_markup=main_menu_keyboard(user),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data == "menu_back")
