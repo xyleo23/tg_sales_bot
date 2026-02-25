@@ -14,16 +14,16 @@ from bot.handlers.logs import router as logs_router
 from bot.handlers.admin import admin_router
 
 router = Router(name="root")
-router.include_router(start_router, name="start")
-router.include_router(subscription_router, name="subscription")
-router.include_router(accounts_router, name="accounts")
-router.include_router(audience_router, name="audience")
-router.include_router(mailing_router, name="mailing")
-router.include_router(inviting_router, name="inviting")
-router.include_router(warming_router, name="warming")
-router.include_router(masslooking_router, name="masslooking")
-router.include_router(logs_router, name="logs")
-router.include_router(admin_router, name="admin")
-router.include_router(menu_router, name="menu")
+router.include_router(start_router)
+router.include_router(subscription_router)
+router.include_router(accounts_router)
+router.include_router(audience_router)
+router.include_router(mailing_router)
+router.include_router(inviting_router)
+router.include_router(warming_router)
+router.include_router(masslooking_router)
+router.include_router(logs_router)
+router.include_router(admin_router)
+router.include_router(menu_router)
 
 __all__ = ["router"]
