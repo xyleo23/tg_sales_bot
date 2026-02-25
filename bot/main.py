@@ -23,7 +23,8 @@ async def main() -> None:
 
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
-    dp.update.outer_middleware(DbSessionMiddleware())
+    dp.message.middleware(DbSessionMiddleware())
+    dp.callback_query.middleware(DbSessionMiddleware())
     dp.include_router(router)
 
     await bot.delete_webhook(drop_pending_updates=True)
