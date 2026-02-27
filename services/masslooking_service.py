@@ -67,7 +67,10 @@ async def run_masslooking_task(
             )
             return
 
-        session_path = sessions_dir / account.session_filename
+        if account.session_file_path:
+            session_path = Path(account.session_file_path)
+        else:
+            session_path = sessions_dir / account.session_filename
         client = get_client(session_path, api_id, api_hash)
 
         await client.connect()

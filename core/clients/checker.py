@@ -59,13 +59,15 @@ async def check_account(account: Account, proxy: Optional[Proxy] = None) -> str:
         'banned'                — аккаунт заблокирован (UserDeactivated*)
         'auth_key_unregistered' — сессия недействительна / устарела
     """
-    from bot.config import TG_API_ID, TG_API_HASH
+    from bot.config import TG_API_ID, TG_API_HASH, SESSIONS_DIR
 
-    if not account.session_file_path:
-        logger.warning(f"check_account [{account.id}]: session_file_path не задан")
+    if account.session_file_path:
+        session_path = Path(account.session_file_path)
+    elif account.session_filename:
+        session_path = SESSIONS_DIR / account.session_filename
+    else:
+        logger.warning(f"check_account [{account.id}]: путь к сессии не задан")
         return "auth_key_unregistered"
-
-    session_path = Path(account.session_file_path)
     if not session_path.exists():
         logger.warning(f"check_account [{account.id}]: файл не найден — {session_path}")
         return "auth_key_unregistered"

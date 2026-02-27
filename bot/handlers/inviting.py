@@ -20,6 +20,8 @@ router = Router(name="inviting")
 
 
 def _session_path(account) -> Path:
+    if account.session_file_path:
+        return Path(account.session_file_path)
     return SESSIONS_DIR / account.session_filename
 
 

@@ -45,8 +45,8 @@ TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
 # Оплата: нативные Telegram Invoices (Bot Payments API)
 # Получить Provider Token: @BotFather → Payments → YooKassa (или другой провайдер)
 PAYMENT_PROVIDER_TOKEN = os.getenv("PAYMENT_PROVIDER_TOKEN", "")
-SUBSCRIPTION_PRICE = 299.0  # руб
-SUBSCRIPTION_DAYS = 30
+SUBSCRIPTION_PRICE = float(os.getenv("SUBSCRIPTION_PRICE", "299"))
+SUBSCRIPTION_DAYS = int(os.getenv("SUBSCRIPTION_DAYS", "30"))
 
 # Задержки (секунды) — для рассылки и инвайтинга
 MAILING_DELAY_MIN = int(os.getenv("MAILING_DELAY_MIN", "1"))

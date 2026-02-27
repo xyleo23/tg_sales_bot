@@ -25,6 +25,9 @@ router = Router(name="mailing")
 
 
 def _get_session_path(account) -> Path:
+    """Путь к .session (поддержка session_file_path и session_filename)."""
+    if account.session_file_path:
+        return Path(account.session_file_path)
     return SESSIONS_DIR / account.session_filename
 
 
@@ -168,7 +171,7 @@ async def _run_mailing_task(
             if not accounts:
                 await bot.send_message(user_telegram_id, "❌ Нет активных аккаунтов.")
                 return
-            session_paths = [SESSIONS_DIR / a.session_filename for a in accounts]
+            session_paths = [_get_session_path(a) for a in accounts]
             offset = 0
             recipients = []
             while True:
@@ -184,15 +187,26 @@ async def _run_mailing_task(
                 await bot.send_message(user_telegram_id, "Рассылка завершена: в аудитории 0 контактов.")
                 return
             await mailing_repo.update_status(sess, mailing_id, user_db_id, "running", started_at=datetime.now(timezone.utc))
-        sent, failed = await run_mailing(
-            session_paths,
-            TG_API_ID,
-            TG_API_HASH,
-            recipients,
-            delay_min=MAILING_DELAY_MIN,
-            delay_max=MAILING_DELAY_MAX,
-            max_per_account=MAILING_MAX_PER_ACCOUNT,
-        )
+        try:
+            sent, failed = await run_mailing(
+                session_paths,
+                TG_API_ID,
+                TG_API_HASH,
+                recipients,
+                delay_min=MAILING_DELAY_MIN,
+                delay_max=MAILING_DELAY_MAX,
+                max_per_account=MAILING_MAX_PER_ACCOUNT,
+            )
+        except Exception as e:
+            from loguru import logger
+            logger.exception("run_mailing failed: %s", e)
+            async with async_session_maker() as sess:
+                await mailing_repo.update_status(
+                    sess, mailing_id, user_db_id, "failed",
+                    finished_at=datetime.now(timezone.utc),
+                )
+            await bot.send_message(user_telegram_id, f"❌ Рассылка завершена с ошибкой: {e}")
+            return
         async with async_session_maker() as sess:
             await mailing_repo.update_status(
                 sess, mailing_id, user_db_id, "done",

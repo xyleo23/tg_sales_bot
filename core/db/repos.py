@@ -202,9 +202,20 @@ class AccountRepo:
             return False
         from pathlib import Path
         from bot.config import SESSIONS_DIR
-        path = Path(SESSIONS_DIR) / acc.session_filename
-        if path.exists():
-            path.unlink(missing_ok=True)
+        # Удаляем .session (поддержка обоих форматов)
+        if acc.session_file_path:
+            sess_path = Path(acc.session_file_path)
+        elif acc.session_filename:
+            sess_path = Path(SESSIONS_DIR) / acc.session_filename
+        else:
+            sess_path = None
+        if sess_path and sess_path.exists():
+            sess_path.unlink(missing_ok=True)
+        # Удаляем .json при массовой загрузке
+        if acc.json_file_path:
+            json_path = Path(acc.json_file_path)
+            if json_path.exists():
+                json_path.unlink(missing_ok=True)
         await session.delete(acc)
         await session.commit()
         return True

@@ -75,7 +75,7 @@ async def pay_subscription(callback: CallbackQuery, bot: Bot, user):
         payload="sub_30_days",
         provider_token=PAYMENT_PROVIDER_TOKEN,
         currency="RUB",
-        prices=[LabeledPrice(label="Подписка", amount=29900)],  # 299.00 руб в копейках
+        prices=[LabeledPrice(label="Подписка", amount=int(SUBSCRIPTION_PRICE * 100))],
         start_parameter="pay_sub",
     )
 
