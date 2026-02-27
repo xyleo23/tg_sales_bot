@@ -36,6 +36,9 @@ TG_API_HASH = os.getenv("TG_API_HASH", "")
 DATA_DIR = BASE_DIR / "data"
 SESSIONS_DIR = DATA_DIR / "sessions"
 
+# Временная папка для распаковки ZIP-архивов (массовая загрузка)
+DOWNLOADS_DIR = BASE_DIR / "downloads" / "sessions"
+
 # Триал для новых пользователей (дней)
 TRIAL_DAYS = int(os.getenv("TRIAL_DAYS", "7"))
 

@@ -5,14 +5,16 @@ Middleware: открывает сессию БД, получает/создаё�
 import logging
 from typing import Any, Awaitable, Callable, Dict
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, User as TgUser
+from aiogram.types import CallbackQuery, Message, TelegramObject, User as TgUser
 from sqlalchemy import select
 
 from core.db.session import async_session_maker
 from core.db.models import User, Subscription
 from core.db.repos import user_repo, subscription_repo
 from core.subscription import ensure_trial_for_new_user
-from bot.config import TRIAL_DAYS
+from bot.config import SUPER_ADMIN_IDS, TRIAL_DAYS
+
+BETA_MESSAGE = "Бот находится в закрытом бета-тестировании. Доступ только по приглашениям."
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +46,13 @@ class DbSessionMiddleware(BaseMiddleware):
                 await ensure_trial_for_new_user(session, user, TRIAL_DAYS)
                 result = await session.execute(select(Subscription).where(Subscription.user_id == user.id))
                 user_sub = result.scalar_one_or_none()
+                if not user.is_allowed and telegram_user.id not in SUPER_ADMIN_IDS:
+                    if isinstance(event, Message):
+                        await event.answer(BETA_MESSAGE)
+                    elif isinstance(event, CallbackQuery):
+                        await event.answer(BETA_MESSAGE, show_alert=True)
+                    return
+
                 data["session"] = session
                 data["user"] = user
                 data["subscription"] = user_sub

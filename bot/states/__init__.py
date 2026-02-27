@@ -5,6 +5,7 @@ from .warming import WarmingStates
 from .inviting import InvitingStates
 from .mailing import MailingStates
 from .masslooking import MasslookingState
+from .proxies import ProxyStates
 
 __all__ = [
     "AdminState",
@@ -15,4 +16,5 @@ __all__ = [
     "InvitingStates",
     "MailingStates",
     "MasslookingState",
+    "ProxyStates",
 ]

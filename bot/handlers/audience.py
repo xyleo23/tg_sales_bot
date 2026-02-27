@@ -2,21 +2,25 @@
 import asyncio
 import csv
 import io
+import re
 from pathlib import Path
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, BufferedInputFile, FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
+from sqlalchemy import select
 
 from bot.keyboards import main_menu_keyboard
 from bot.states import ParserMembersStates, ParserMessagesStates
-from bot.config import SESSIONS_DIR, TG_API_ID, TG_API_HASH
+from bot.config import SESSIONS_DIR, TG_API_ID, TG_API_HASH, DATA_DIR
 from bot.utils import is_telethon_configured
 from core.db.session import async_session_maker
 from core.db.repos import audience_repo, account_repo, activity_log_repo
+from core.db.models import Proxy
+from core.clients.parser import parse_chat_members
 from core.telegram.client_manager import get_client
-from core.telegram.parser import parse_participants, parse_by_messages, normalize_chat_input
+from core.telegram.parser import parse_by_messages, normalize_chat_input
 from core.auth import has_subscription_access
 
 router = Router(name="audience")
@@ -90,13 +94,10 @@ async def export_audience(callback: CallbackQuery, user, subscription, session):
     await callback.message.answer_document(file, caption=f"Экспорт аудитории «{aud.name}»: {len(members)} контактов")
 
 
-# ----- Парсер по участникам -----
+# ----- Парсер по участникам (Pyrogram) -----
 @router.callback_query(F.data == "menu_parser_members")
 async def parser_members_start(callback: CallbackQuery, user, subscription, session, state: FSMContext):
     await callback.answer()
-    if not is_telethon_configured():
-        await callback.message.answer("⚠️ TG_API_ID и TG_API_HASH не заданы в .env. Обратитесь к администратору.")
-        return
     if not has_subscription_access(user, subscription):
         await callback.message.answer("⚠️ Нужна активная подписка.")
         return
@@ -104,92 +105,84 @@ async def parser_members_start(callback: CallbackQuery, user, subscription, sess
     if not accounts or not any(a.status == "active" for a in accounts):
         await callback.message.answer("Сначала добавьте хотя бы один активный аккаунт (Загрузить аккаунт).")
         return
-    await state.set_state(ParserMembersStates.wait_name)
-    await state.update_data(user_db_id=user.id)
+    await state.set_state(ParserMembersStates.wait_chat)
+    await state.update_data(user_db_id=user.id, telegram_id=user.telegram_id)
     await callback.message.answer(
         "👥 <b>Парсер по участникам</b>\n\n"
-        "Введите <b>название аудитории</b> (например: канал_маркетинг).\nОтмена: /cancel",
-        parse_mode="HTML",
-    )
-
-
-@router.message(ParserMembersStates.wait_name, F.text)
-async def parser_members_name(message: Message, state: FSMContext, user, session):
-    if message.text == "/cancel":
-        await state.clear()
-        await message.answer("Отменено.", reply_markup=main_menu_keyboard())
-        return
-    name = message.text.strip()[:100] or "Участники"
-    await state.update_data(audience_name=name)
-    await state.set_state(ParserMembersStates.wait_chat)
-    await message.answer(
-        "Отправьте <b>ссылку на чат/канал</b> или @username.\nНапример: @durov или https://t.me/durov\nОтмена: /cancel",
+        "Отправьте <b>ссылку на чат/канал</b> или @username.\n"
+        "Например: @durov или https://t.me/durov\n\nОтмена: /cancel",
         parse_mode="HTML",
     )
 
 
 @router.message(ParserMembersStates.wait_chat, F.text)
-async def parser_members_chat(message: Message, state: FSMContext, user, session):
+async def parser_members_chat(message: Message, state: FSMContext, user, session, bot: Bot):
     if message.text == "/cancel":
         await state.clear()
         await message.answer("Отменено.", reply_markup=main_menu_keyboard())
         return
+
     chat = normalize_chat_input(message.text)
     if not chat:
-        await message.answer("Укажите ссылку или @username.")
+        await message.answer("Укажите ссылку или @username чата.")
         return
-    await state.update_data(chat=chat)
-    await state.set_state(ParserMembersStates.wait_limit)
-    await message.answer(
-        "Введите <b>лимит участников</b> (число до 10000) или 0 для 5000.\nОтмена: /cancel",
-        parse_mode="HTML",
-    )
 
-
-@router.message(ParserMembersStates.wait_limit, F.text)
-async def parser_members_limit(message: Message, state: FSMContext, user, session, bot: Bot):
-    if message.text == "/cancel":
-        await state.clear()
-        await message.answer("Отменено.", reply_markup=main_menu_keyboard())
-        return
-    try:
-        limit = int(message.text.strip()) if message.text.strip() else 5000
-        limit = max(1, min(10000, limit))
-    except ValueError:
-        limit = 5000
     data = await state.get_data()
-    audience_name = data.get("audience_name", "Участники")
-    chat = data.get("chat", "")
     user_db_id = data.get("user_db_id", user.id)
+    telegram_id = data.get("telegram_id", user.telegram_id)
     await state.clear()
 
-    await message.answer("⏳ Парсинг запущен. Это может занять несколько минут. Вы получите уведомление.")
+    await message.answer("⏳ Парсинг запущен. Это может занять несколько минут. Вы получите файл с результатом.")
 
     async def run_parser():
-        async with async_session_maker() as sess:
-            accounts = await account_repo.list_by_user(sess, user_db_id)
-            account = next((a for a in accounts if a.status == "active"), None)
-            if not account:
-                await bot.send_message(user.telegram_id, "❌ Нет активного аккаунта.")
+        txt_path: Path | None = None
+        try:
+            async with async_session_maker() as sess:
+                accounts = await account_repo.list_by_user(sess, user_db_id)
+                account = next((a for a in accounts if a.status == "active"), None)
+                if not account:
+                    await bot.send_message(telegram_id, "❌ Нет активного аккаунта для парсинга.")
+                    return
+
+                proxy: Proxy | None = None
+                if account.proxy_id:
+                    r = await sess.execute(select(Proxy).where(Proxy.id == account.proxy_id))
+                    proxy = r.scalar_one_or_none()
+
+            # expire_on_commit=False: column values доступны вне сессии
+            members = await parse_chat_members(account, proxy, chat)
+
+            if not members:
+                await bot.send_message(telegram_id, "⚠️ Участников не найдено (чат пуст или нет доступа).")
                 return
-            path = _get_session_path(account)
-            client = get_client(path, TG_API_ID, TG_API_HASH)
-            try:
-                members = await parse_participants(client, chat, limit=limit)
-            except Exception as e:
-                await bot.send_message(user.telegram_id, f"❌ Ошибка парсинга: {e}")
-                return
-            aud = await audience_repo.create(sess, user_db_id, audience_name, "parser_members", chat)
-            added = await audience_repo.add_members(
-                sess, aud.id,
-                [(m[0], m[1], m[2], m[3]) for m in members],
+
+            # Сохранить в TXT-файл
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            safe_slug = re.sub(r"[^\w]", "_", chat)[:30]
+            txt_path = DATA_DIR / f"chat_members_{safe_slug}_{telegram_id}.txt"
+            txt_path.write_text("\n".join(members), encoding="utf-8")
+
+            # Отправить файл
+            doc = FSInputFile(txt_path, filename=txt_path.name)
+            await bot.send_document(
+                telegram_id,
+                doc,
+                caption=f"✅ Парсинг завершен. Найдено: {len(members)} участников.",
             )
-            await activity_log_repo.add(sess, user_db_id, "parser_members", f"aud:{audience_name}, chat:{chat}, count:{added}")
-            await bot.send_message(
-                user.telegram_id,
-                f"✅ Аудитория «{audience_name}» создана.\nСобрано контактов: {added}.",
-                reply_markup=main_menu_keyboard(),
-            )
+
+            # Логируем
+            async with async_session_maker() as sess2:
+                await activity_log_repo.add(
+                    sess2, user_db_id,
+                    "parser_members_pyrogram",
+                    f"chat:{chat}, count:{len(members)}",
+                )
+
+        except Exception as exc:
+            await bot.send_message(telegram_id, f"❌ Ошибка парсинга: {exc}")
+        finally:
+            if txt_path and txt_path.exists():
+                txt_path.unlink(missing_ok=True)
 
     asyncio.create_task(run_parser())
 

@@ -41,11 +41,14 @@ class UserRepo:
         result = await session.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalar_one_or_none()
         role = _resolve_role(telegram_id)
+        is_admin = role == USER_ROLE_SUPER_ADMIN
         if user:
             user.username = username
             user.first_name = first_name
             user.last_name = last_name
             user.role = role
+            if is_admin:
+                user.is_allowed = True
             await session.commit()
             await session.refresh(user)
             return user, False
@@ -55,6 +58,7 @@ class UserRepo:
             first_name=first_name,
             last_name=last_name,
             role=role,
+            is_allowed=is_admin,
         )
         session.add(user)
         await session.commit()
@@ -139,6 +143,39 @@ class AccountRepo:
         await session.commit()
         await session.refresh(acc)
         return acc
+
+    async def create_with_paths(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        session_file_path: str,
+        json_file_path: str,
+        phone_number: Optional[str] = None,
+        proxy_string: Optional[str] = None,
+    ) -> Account:
+        """Создать аккаунт из пары .session + .json (массовая загрузка через ZIP)."""
+        from pathlib import Path as _Path
+        stem = _Path(session_file_path).stem
+        name = (phone_number or stem)[:64]
+        acc = Account(
+            user_id=user_id,
+            name=name,
+            session_file_path=session_file_path,
+            json_file_path=json_file_path,
+            session_filename=_Path(session_file_path).name,
+            phone=phone_number,
+            phone_number=phone_number,
+            proxy_string=proxy_string,
+            status="active",
+        )
+        session.add(acc)
+        await session.commit()
+        await session.refresh(acc)
+        return acc
+
+    async def get_by_phone_number(self, session: AsyncSession, phone_number: str) -> Optional[Account]:
+        result = await session.execute(select(Account).where(Account.phone_number == phone_number))
+        return result.scalar_one_or_none()
 
     async def list_by_user(self, session: AsyncSession, user_id: int) -> list[Account]:
         result = await session.execute(select(Account).where(Account.user_id == user_id).order_by(Account.created_at.desc()))

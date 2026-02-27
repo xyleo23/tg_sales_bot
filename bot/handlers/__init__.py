@@ -12,6 +12,7 @@ from bot.handlers.warming import router as warming_router
 from bot.handlers.masslooking import router as masslooking_router
 from bot.handlers.logs import router as logs_router
 from bot.handlers.admin import admin_router
+from bot.handlers.proxies import proxy_router
 
 router = Router(name="root")
 router.include_router(start_router)
@@ -24,6 +25,7 @@ router.include_router(warming_router)
 router.include_router(masslooking_router)
 router.include_router(logs_router)
 router.include_router(admin_router)
+router.include_router(proxy_router)
 router.include_router(menu_router)
 
 __all__ = ["router"]

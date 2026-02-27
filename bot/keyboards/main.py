@@ -18,12 +18,18 @@ def main_menu_keyboard(user=None) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🛒 Купить аккаунт", callback_data="menu_buy_account"),
     )
     builder.row(
+        InlineKeyboardButton(text="📦 Добавить аккаунты (ZIP)", callback_data="menu_upload_accounts_zip"),
+    )
+    builder.row(
         InlineKeyboardButton(text="👥 Парсер по участникам", callback_data="menu_parser_members"),
         InlineKeyboardButton(text="💬 Парсер по сообщениям", callback_data="menu_parser_messages"),
     )
     builder.row(
         InlineKeyboardButton(text="⚡️ Аккаунты", callback_data="menu_accounts"),
         InlineKeyboardButton(text="👥 Аудитория", callback_data="menu_audience"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🌐 Прокси", callback_data="menu_proxies"),
     )
     builder.row(
         InlineKeyboardButton(text="➕ Инвайтинг", callback_data="menu_inviting"),

@@ -9,6 +9,7 @@ from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Document, Message
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient
 from telethon.errors import AuthKeyUnregisteredError, SessionPasswordNeededError
 
@@ -251,3 +252,61 @@ async def process_csv_document(
 @admin_router.message(AdminState.waiting_for_csv)
 async def process_csv_other(message: Message) -> None:
     await message.answer("Пришлите CSV файл или /cancel для отмены.")
+
+
+# --- /add_user и /del_user ---
+
+
+@admin_router.message(F.text.startswith("/add_user"), F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
+async def cmd_add_user(message: Message, session: AsyncSession) -> None:
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("Использование: /add_user <telegram_id>")
+        return
+    try:
+        target_tg_id = int(parts[1])
+    except ValueError:
+        await message.answer("❌ Неверный формат ID. Ожидается число.")
+        return
+
+    result = await session.execute(select(User).where(User.telegram_id == target_tg_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        await message.answer(
+            f"❌ Пользователь с Telegram ID {target_tg_id} не найден в базе данных.\n"
+            "Пользователь должен хотя бы раз написать боту, чтобы появиться в БД."
+        )
+        return
+
+    user.is_allowed = True
+    await session.commit()
+    name = user.first_name or user.username or str(target_tg_id)
+    await message.answer(f"✅ Доступ выдан: {name} (ID: {target_tg_id})")
+
+
+@admin_router.message(F.text.startswith("/del_user"), F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
+async def cmd_del_user(message: Message, session: AsyncSession) -> None:
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("Использование: /del_user <telegram_id>")
+        return
+    try:
+        target_tg_id = int(parts[1])
+    except ValueError:
+        await message.answer("❌ Неверный формат ID. Ожидается число.")
+        return
+
+    if target_tg_id in SUPER_ADMIN_IDS:
+        await message.answer("❌ Нельзя отозвать доступ у супер-админа.")
+        return
+
+    result = await session.execute(select(User).where(User.telegram_id == target_tg_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        await message.answer(f"❌ Пользователь с Telegram ID {target_tg_id} не найден в базе данных.")
+        return
+
+    user.is_allowed = False
+    await session.commit()
+    name = user.first_name or user.username or str(target_tg_id)
+    await message.answer(f"✅ Доступ отозван: {name} (ID: {target_tg_id})")
