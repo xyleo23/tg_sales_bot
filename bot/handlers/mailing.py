@@ -57,7 +57,8 @@ async def mailing_start(callback: CallbackQuery, user, subscription, session, st
     await callback.message.answer(
         "✉️ <b>Рассылка</b>\n\n"
         "Введите <b>id аудитории</b> из списка:\n\n" +
-        "\n".join(lines) + "\n\nОтмена: /cancel"
+        "\n".join(lines) + "\n\nОтмена: /cancel",
+        parse_mode="HTML",
     )
     await state.set_state(MailingStates.wait_audience_id)
 
@@ -83,7 +84,8 @@ async def mailing_audience_id(message: Message, state: FSMContext, audience_id_s
     lines = [f"• id <b>{a.id}</b> — {a.name}" for a in active]
     await message.answer(
         "Введите <b>id аккаунтов через запятую</b> для ротации (например: 1,2,3):\n\n" +
-        "\n".join(lines) + "\n\nОтмена: /cancel"
+        "\n".join(lines) + "\n\nОтмена: /cancel",
+        parse_mode="HTML",
     )
     await state.set_state(MailingStates.wait_account_ids)
 
@@ -107,7 +109,8 @@ async def mailing_account_ids(message: Message, state: FSMContext, user, session
     await state.update_data(mailing_account_ids=valid)
     await message.answer(
         "Отправьте <b>текст сообщения</b>, который будет отправлен каждому из аудитории.\n"
-        "Поддерживаются плейсхолдеры: {name}, {username} — подставятся из контакта.\n\nОтмена: /cancel"
+        "Поддерживаются плейсхолдеры: {name}, {username} — подставятся из контакта.\n\nОтмена: /cancel",
+        parse_mode="HTML",
     )
     await state.set_state(MailingStates.wait_message)
 

@@ -56,7 +56,7 @@ async def show_subscription(callback: CallbackQuery, user, subscription):
         f"Подписка на {SUBSCRIPTION_DAYS} дней — {SUBSCRIPTION_PRICE:.0f} ₽"
     )
 
-    await callback.message.answer(text, reply_markup=_subscription_keyboard())
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=_subscription_keyboard())
 
 
 @router.callback_query(F.data == "pay_subscription")

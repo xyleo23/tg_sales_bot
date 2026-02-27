@@ -45,7 +45,8 @@ async def inviting_start(callback: CallbackQuery, user, subscription, session, s
     await callback.message.answer(
         "➕ <b>Инвайтинг</b>\n\n"
         "Введите <b>id аудитории</b>, участников которой пригласить в группу:\n\n" +
-        "\n".join(lines) + "\n\nОтмена: /cancel"
+        "\n".join(lines) + "\n\nОтмена: /cancel",
+        parse_mode="HTML",
     )
     await state.set_state(InvitingStates.wait_audience_id)
 
@@ -67,7 +68,10 @@ async def inviting_audience_id(message: Message, state: FSMContext, user, sessio
         return
     await state.update_data(inviting_audience_id=audience_id)
     await state.set_state(InvitingStates.wait_chat)
-    await message.answer("Введите <b>ссылку на группу/канал</b> или @username, куда приглашать (нужны права на приглашение).\nОтмена: /cancel")
+    await message.answer(
+        "Введите <b>ссылку на группу/канал</b> или @username, куда приглашать (нужны права на приглашение).\nОтмена: /cancel",
+        parse_mode="HTML",
+    )
 
 
 @router.message(InvitingStates.wait_chat, F.text)
@@ -87,7 +91,8 @@ async def inviting_chat(message: Message, state: FSMContext, user, session):
     await state.set_state(InvitingStates.wait_account_id)
     await message.answer(
         "Введите <b>id аккаунта</b>, с которого приглашать:\n\n" +
-        "\n".join(lines) + "\n\nОтмена: /cancel"
+        "\n".join(lines) + "\n\nОтмена: /cancel",
+        parse_mode="HTML",
     )
 
 

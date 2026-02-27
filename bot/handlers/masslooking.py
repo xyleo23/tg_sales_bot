@@ -52,6 +52,7 @@ async def masslooking_start(callback: CallbackQuery, user, subscription, session
 
     await callback.message.answer(
         "👀 <b>Масслукинг</b>\n\nВыберите <b>аудиторию</b>, сторис участников которой просматривать:",
+        parse_mode="HTML",
         reply_markup=builder.as_markup(),
     )
     await state.set_state(MasslookingState.waiting_for_audience)
@@ -93,6 +94,7 @@ async def masslooking_audience_selected(callback: CallbackQuery, user, subscript
 
     await callback.message.answer(
         f"Выбрана аудитория <b>{aud.name}</b>.\n\nВыберите <b>аккаунт</b> для просмотра сторис:",
+        parse_mode="HTML",
         reply_markup=builder.as_markup(),
     )
     await state.set_state(MasslookingState.waiting_for_account)
@@ -127,6 +129,7 @@ async def masslooking_account_selected(callback: CallbackQuery, user, subscripti
 
     await callback.message.answer(
         f"Запустить масслукинг для аудитории <b>{audience_name}</b> с аккаунта <b>{account.name}</b>?",
+        parse_mode="HTML",
         reply_markup=builder.as_markup(),
     )
     await state.set_state(MasslookingState.waiting_for_confirmation)

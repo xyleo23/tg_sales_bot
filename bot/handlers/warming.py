@@ -42,7 +42,8 @@ async def warming_start(callback: CallbackQuery, user, subscription, session, st
         "🔥 <b>Прогрев аккаунтов</b>\n\n"
         "Введите <b>id аккаунтов через запятую</b> (например: 1,2).\n"
         "Прогрев: проверка диалогов (имитация активности).\n\n" +
-        "\n".join(lines) + "\n\nОтмена: /cancel"
+        "\n".join(lines) + "\n\nОтмена: /cancel",
+        parse_mode="HTML",
     )
 
 
@@ -82,6 +83,7 @@ async def warming_account_ids(message: Message, state: FSMContext, user, session
         await bot.send_message(
             user_telegram_id,
             f"🔥 <b>Прогрев завершён</b>\n\n{text_result}",
+            parse_mode="HTML",
             reply_markup=main_menu_keyboard(),
         )
         # Не закрывать bot.session — bot общий с диспетчером

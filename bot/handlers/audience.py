@@ -40,7 +40,7 @@ async def list_audiences(callback: CallbackQuery, user, subscription, session):
             "У вас пока нет аудиторий.\n"
             "Создайте из парсера: «Парсер по участникам» или «Парсер по сообщениям»."
         )
-        await callback.message.answer(text)
+        await callback.message.answer(text, parse_mode="HTML")
         return
     lines = []
     builder = InlineKeyboardBuilder()
@@ -51,7 +51,7 @@ async def list_audiences(callback: CallbackQuery, user, subscription, session):
             InlineKeyboardButton(text=f"📥 Экспорт «{a.name}»", callback_data=f"audience_export_{a.id}")
         )
     text = "👥 <b>Аудитория</b>\n\n" + "\n".join(lines)
-    await callback.message.answer(text, reply_markup=builder.as_markup())
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("audience_export_"))
@@ -108,7 +108,8 @@ async def parser_members_start(callback: CallbackQuery, user, subscription, sess
     await state.update_data(user_db_id=user.id)
     await callback.message.answer(
         "👥 <b>Парсер по участникам</b>\n\n"
-        "Введите <b>название аудитории</b> (например: канал_маркетинг).\nОтмена: /cancel"
+        "Введите <b>название аудитории</b> (например: канал_маркетинг).\nОтмена: /cancel",
+        parse_mode="HTML",
     )
 
 
@@ -121,7 +122,10 @@ async def parser_members_name(message: Message, state: FSMContext, user, session
     name = message.text.strip()[:100] or "Участники"
     await state.update_data(audience_name=name)
     await state.set_state(ParserMembersStates.wait_chat)
-    await message.answer("Отправьте <b>ссылку на чат/канал</b> или @username.\nНапример: @durov или https://t.me/durov\nОтмена: /cancel")
+    await message.answer(
+        "Отправьте <b>ссылку на чат/канал</b> или @username.\nНапример: @durov или https://t.me/durov\nОтмена: /cancel",
+        parse_mode="HTML",
+    )
 
 
 @router.message(ParserMembersStates.wait_chat, F.text)
@@ -136,7 +140,10 @@ async def parser_members_chat(message: Message, state: FSMContext, user, session
         return
     await state.update_data(chat=chat)
     await state.set_state(ParserMembersStates.wait_limit)
-    await message.answer("Введите <b>лимит участников</b> (число до 10000) или 0 для 5000.\nОтмена: /cancel")
+    await message.answer(
+        "Введите <b>лимит участников</b> (число до 10000) или 0 для 5000.\nОтмена: /cancel",
+        parse_mode="HTML",
+    )
 
 
 @router.message(ParserMembersStates.wait_limit, F.text)
@@ -205,7 +212,8 @@ async def parser_messages_start(callback: CallbackQuery, user, subscription, ses
     await state.update_data(user_db_id=user.id)
     await callback.message.answer(
         "💬 <b>Парсер по сообщениям</b>\n\n"
-        "Введите <b>название аудитории</b>.\nОтмена: /cancel"
+        "Введите <b>название аудитории</b>.\nОтмена: /cancel",
+        parse_mode="HTML",
     )
 
 
@@ -217,7 +225,10 @@ async def parser_messages_name(message: Message, state: FSMContext):
         return
     await state.update_data(audience_name=message.text.strip()[:100] or "По сообщениям")
     await state.set_state(ParserMessagesStates.wait_chat)
-    await message.answer("Отправьте <b>ссылку на чат/канал</b> или @username.\nОтмена: /cancel")
+    await message.answer(
+        "Отправьте <b>ссылку на чат/канал</b> или @username.\nОтмена: /cancel",
+        parse_mode="HTML",
+    )
 
 
 @router.message(ParserMessagesStates.wait_chat, F.text)
@@ -232,7 +243,10 @@ async def parser_messages_chat(message: Message, state: FSMContext):
         return
     await state.update_data(chat=chat)
     await state.set_state(ParserMessagesStates.wait_keywords)
-    await message.answer("Введите <b>ключевые слова</b> через запятую (авторы сообщений с этими словами попадут в аудиторию).\nОтмена: /cancel")
+    await message.answer(
+        "Введите <b>ключевые слова</b> через запятую (авторы сообщений с этими словами попадут в аудиторию).\nОтмена: /cancel",
+        parse_mode="HTML",
+    )
 
 
 @router.message(ParserMessagesStates.wait_keywords, F.text)

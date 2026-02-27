@@ -35,7 +35,7 @@ async def list_accounts(callback: CallbackQuery, user, subscription, session):
             "У вас пока нет загруженных аккаунтов.\n"
             "Нажмите «Загрузить аккаунт» в главном меню или отправьте /upload."
         )
-        await callback.message.answer(text)
+        await callback.message.answer(text, parse_mode="HTML")
         return
     lines = [f"• <b>{a.name}</b> — {a.status} (id {a.id})" for a in accounts]
     text = "⚡️ <b>Аккаунты</b>\n\n" + "\n".join(lines) + "\n\nЗагрузить ещё: /upload\nУдалить: нажмите кнопку ниже"
@@ -44,7 +44,7 @@ async def list_accounts(callback: CallbackQuery, user, subscription, session):
         builder.row(
             InlineKeyboardButton(text=f"🗑 Удалить «{a.name}»", callback_data=f"account_delete_{a.id}")
         )
-    await callback.message.answer(text, reply_markup=builder.as_markup())
+    await callback.message.answer(text, parse_mode="HTML", reply_markup=builder.as_markup())
 
 
 @router.callback_query(F.data.startswith("account_delete_"))
@@ -76,7 +76,8 @@ async def upload_start_callback(callback: CallbackQuery, user, subscription, ses
     await callback.message.answer(
         "Введите <b>имя аккаунта</b> (латиница/цифры, до 15 символов).\n"
         "Например: <code>main</code> или <code>аккаунт1</code>\n\n"
-        "Отмена: /cancel"
+        "Отмена: /cancel",
+        parse_mode="HTML",
     )
 
 
@@ -90,7 +91,8 @@ async def upload_start_message(message: Message, user, subscription, session, st
     await message.answer(
         "Введите <b>имя аккаунта</b> (латиница/цифры, до 15 символов).\n"
         "Например: <code>main</code> или <code>аккаунт1</code>\n\n"
-        "Отмена: /cancel"
+        "Отмена: /cancel",
+        parse_mode="HTML",
     )
 
 
@@ -109,7 +111,8 @@ async def upload_got_name(message: Message, state: FSMContext, user, session):
     await message.answer(
         "Отправьте <b>файл .session</b> (документом).\n"
         "Получить его можно через официальные инструменты Telethon или экспорт сессии.\n\n"
-        "Отмена: /cancel"
+        "Отмена: /cancel",
+        parse_mode="HTML",
     )
 
 
@@ -152,6 +155,7 @@ async def upload_got_file(
     await message.answer(
         f"✅ Аккаунт <b>{account_name}</b> добавлен и проверен.\n"
         "Раздел «Аккаунты» — список всех аккаунтов.",
+        parse_mode="HTML",
         reply_markup=main_menu_keyboard(),
     )
 
