@@ -12,7 +12,8 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from bot.config import PAYMENT_PROVIDER_TOKEN, SUBSCRIPTION_DAYS, SUBSCRIPTION_PRICE
-from core.db.repos import subscription_repo
+from bot.keyboards import main_menu_keyboard
+from core.db.repos import activity_log_repo, subscription_repo
 from core.subscription import format_expires_at, is_subscription_active
 
 router = Router(name="subscription")
@@ -27,7 +28,7 @@ def _subscription_keyboard() -> InlineKeyboardMarkup:
                 callback_data="pay_subscription",
             )
         )
-    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="menu_back"))
+    builder.row(InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main"))
     return builder.as_markup()
 
 
@@ -56,7 +57,7 @@ async def show_subscription(callback: CallbackQuery, user, subscription):
         f"Подписка на {SUBSCRIPTION_DAYS} дней — {SUBSCRIPTION_PRICE:.0f} ₽"
     )
 
-    await callback.message.answer(text, parse_mode="HTML", reply_markup=_subscription_keyboard())
+    await callback.message.answer(text, reply_markup=_subscription_keyboard())
 
 
 @router.callback_query(F.data == "pay_subscription")
@@ -71,8 +72,8 @@ async def pay_subscription(callback: CallbackQuery, bot: Bot, user):
     await bot.send_invoice(
         chat_id=callback.message.chat.id,
         title="Подписка на бота",
-        description="Оплата доступа к функциям бота на 30 дней",
-        payload="sub_30_days",
+        description=f"Доступ ко всем функциям бота на {SUBSCRIPTION_DAYS} дней",
+        payload=f"sub_{SUBSCRIPTION_DAYS}_days",
         provider_token=PAYMENT_PROVIDER_TOKEN,
         currency="RUB",
         prices=[LabeledPrice(label="Подписка", amount=int(SUBSCRIPTION_PRICE * 100))],
@@ -87,17 +88,23 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery, bot: Bot):
 
 @router.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
 async def successful_payment_handler(message: Message, session, user):
-    """Продление подписки на 30 дней после успешной оплаты."""
     payment = message.successful_payment
     payment_id = payment.provider_payment_charge_id or payment.invoice_payload
 
-    await subscription_repo.extend_or_create(
+    sub = await subscription_repo.extend_or_create(
         session,
         user.id,
         "telegram_payment",
         days=SUBSCRIPTION_DAYS,
         payment_id=payment_id,
     )
+    await activity_log_repo.add(
+        session, user.id, "payment_success",
+        f"days:{SUBSCRIPTION_DAYS}, payment_id:{payment_id}",
+    )
+    expires_str = format_expires_at(sub)
     await message.answer(
-        "✅ Оплата успешно прошла! Подписка продлена на 30 дней."
+        f"✅ Оплата прошла! Подписка продлена на {SUBSCRIPTION_DAYS} дней.\n"
+        f"Действует до: {expires_str}",
+        reply_markup=main_menu_keyboard(user),
     )

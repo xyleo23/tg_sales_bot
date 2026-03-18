@@ -36,7 +36,7 @@ async def warm_account(
             await client.disconnect()
         except Exception:
             pass
-        return False, f"FloodWait: подождите {e.value} сек"
+        return False, f"FloodWait: подождите {e.seconds} сек"
     except Exception as e:
         logger.exception("warm_account failed")
         try:

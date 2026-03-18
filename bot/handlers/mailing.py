@@ -1,7 +1,7 @@
 """Рассылка: выбор аудитории, аккаунтов, текст сообщения, запуск."""
 import asyncio
 from pathlib import Path
-from aiogram import Router, F
+from aiogram import Bot, Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
@@ -69,14 +69,14 @@ async def mailing_start(callback: CallbackQuery, user, subscription, session, st
 @router.message(MailingStates.wait_audience_id, F.text == "/cancel")
 @router.message(MailingStates.wait_account_ids, F.text == "/cancel")
 @router.message(MailingStates.wait_message, F.text == "/cancel")
-async def mailing_cancel(message: Message, state: FSMContext):
+async def mailing_cancel(message: Message, state: FSMContext, user=None):
     await state.clear()
-    await message.answer("Отменено.", reply_markup=main_menu_keyboard())
+    await message.answer("Отменено.", reply_markup=main_menu_keyboard(user))
 
 
-@router.message(MailingStates.wait_audience_id, F.text, F.text.regexp(r"^\d+$").as_("audience_id_str"))
-async def mailing_audience_id(message: Message, state: FSMContext, audience_id_str: str, user, subscription, session):
-    audience_id = int(audience_id_str)
+@router.message(MailingStates.wait_audience_id, F.text.regexp(r"^\d+$"))
+async def mailing_audience_id(message: Message, state: FSMContext, user, subscription, session):
+    audience_id = int(message.text.strip())
     aud = await audience_repo.get_by_id(session, audience_id, user.id)
     if not aud:
         await message.answer("Аудитория не найдена. Введите id из списка или /cancel")
@@ -97,7 +97,7 @@ async def mailing_audience_id(message: Message, state: FSMContext, audience_id_s
 async def mailing_account_ids(message: Message, state: FSMContext, user, session):
     if message.text == "/cancel":
         await state.clear()
-        await message.answer("Отменено.", reply_markup=main_menu_keyboard())
+        await message.answer("Отменено.", reply_markup=main_menu_keyboard(user))
         return
     try:
         ids = [int(x.strip()) for x in message.text.split(",") if x.strip()]
@@ -119,10 +119,10 @@ async def mailing_account_ids(message: Message, state: FSMContext, user, session
 
 
 @router.message(MailingStates.wait_message, F.text)
-async def mailing_message(message: Message, state: FSMContext, user, session):
+async def mailing_message(message: Message, state: FSMContext, user, session, bot: Bot):
     if message.text == "/cancel":
         await state.clear()
-        await message.answer("Отменено.", reply_markup=main_menu_keyboard())
+        await message.answer("Отменено.", reply_markup=main_menu_keyboard(user))
         return
     data = await state.get_data()
     audience_id = data["mailing_audience_id"]
@@ -139,6 +139,7 @@ async def mailing_message(message: Message, state: FSMContext, user, session):
         f"⏳ Рассылка запущена (id {m.id}). Вы получите уведомление по завершении."
     )
     asyncio.create_task(_run_mailing_task(
+        bot=bot,
         mailing_id=m.id,
         user_db_id=user.id,
         user_telegram_id=user_telegram_id,
@@ -149,6 +150,7 @@ async def mailing_message(message: Message, state: FSMContext, user, session):
 
 
 async def _run_mailing_task(
+    bot: Bot,
     mailing_id: int,
     user_db_id: int,
     user_telegram_id: int,
@@ -157,9 +159,10 @@ async def _run_mailing_task(
     message_text: str,
 ):
     from datetime import datetime, timezone
-    from aiogram import Bot
-    from bot.config import BOT_TOKEN
-    bot = Bot(token=BOT_TOKEN)
+    from html import escape
+
+    from loguru import logger
+
     try:
         async with async_session_maker() as sess:
             aud = await audience_repo.get_by_id(sess, audience_id, user_db_id)
@@ -179,6 +182,8 @@ async def _run_mailing_task(
                 if not chunk:
                     break
                 for m in chunk:
+                    if not m.telegram_id:
+                        continue
                     msg = message_text.replace("{name}", m.first_name or "").replace("{username}", m.username or "")
                     recipients.append((m.telegram_id, msg))
                 offset += len(chunk)
@@ -198,14 +203,13 @@ async def _run_mailing_task(
                 max_per_account=MAILING_MAX_PER_ACCOUNT,
             )
         except Exception as e:
-            from loguru import logger
-            logger.exception("run_mailing failed: %s", e)
+            logger.exception("run_mailing failed")
             async with async_session_maker() as sess:
                 await mailing_repo.update_status(
                     sess, mailing_id, user_db_id, "failed",
                     finished_at=datetime.now(timezone.utc),
                 )
-            await bot.send_message(user_telegram_id, f"❌ Рассылка завершена с ошибкой: {e}")
+            await bot.send_message(user_telegram_id, f"❌ Рассылка завершена с ошибкой: {escape(str(e))}")
             return
         async with async_session_maker() as sess:
             await mailing_repo.update_status(
@@ -218,5 +222,9 @@ async def _run_mailing_task(
             f"✅ Рассылка завершена.\nОтправлено: {sent}, ошибок: {failed}.",
             reply_markup=main_menu_keyboard(),
         )
-    finally:
-        await bot.session.close()
+    except Exception as e:
+        logger.exception("_run_mailing_task unhandled error")
+        try:
+            await bot.send_message(user_telegram_id, f"❌ Ошибка рассылки: {escape(str(e))}")
+        except Exception:
+            pass

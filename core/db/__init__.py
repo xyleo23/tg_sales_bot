@@ -1,5 +1,5 @@
 from .models import Account, Audience, AudienceMember, User
-from .session import async_session_factory, get_session, init_db
+from .session import async_session_factory, async_session_maker, get_session, init_db
 
 __all__ = [
     "User",
@@ -7,6 +7,7 @@ __all__ = [
     "Audience",
     "AudienceMember",
     "async_session_factory",
+    "async_session_maker",
     "get_session",
     "init_db",
 ]

@@ -36,7 +36,7 @@ async def parse_participants(
             ))
         await client.disconnect()
     except FloodWaitError as e:
-        logger.warning(f"FloodWait {e.value}s")
+        logger.warning(f"FloodWait {e.seconds}s")
         await client.disconnect()
         raise
     except (ChannelPrivateError, ChatAdminRequiredError, ValueError) as e:
@@ -93,7 +93,7 @@ async def parse_by_messages(
             ))
         await client.disconnect()
     except FloodWaitError as e:
-        logger.warning(f"FloodWait {e.value}s")
+        logger.warning(f"FloodWait {e.seconds}s")
         await client.disconnect()
         raise
     except (ChannelPrivateError, ChatAdminRequiredError, ValueError) as e:

@@ -2,21 +2,20 @@
 Middleware: открывает сессию БД, получает/создаёт пользователя и выдаёт триал при первом заходе.
 В data попадают: session (AsyncSession), user (User с подгруженной subscription).
 """
-import logging
 from typing import Any, Awaitable, Callable, Dict
+
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery, Message, TelegramObject, User as TgUser
+from aiogram.types import CallbackQuery, Message, PreCheckoutQuery, TelegramObject, User as TgUser
+from loguru import logger
 from sqlalchemy import select
 
-from core.db.session import async_session_maker
-from core.db.models import User, Subscription
-from core.db.repos import user_repo, subscription_repo
-from core.subscription import ensure_trial_for_new_user
 from bot.config import SUPER_ADMIN_IDS, TRIAL_DAYS
+from core.db.models import Subscription
+from core.db.repos import user_repo
+from core.db.session import async_session_maker
+from core.subscription import ensure_trial_for_new_user
 
 BETA_MESSAGE = "Бот находится в закрытом бета-тестировании. Доступ только по приглашениям."
-
-logger = logging.getLogger(__name__)
 
 
 class DbSessionMiddleware(BaseMiddleware):
@@ -34,8 +33,8 @@ class DbSessionMiddleware(BaseMiddleware):
         if not telegram_user:
             return await handler(event, data)
 
-        try:
-            async with async_session_maker() as session:
+        async with async_session_maker() as session:
+            try:
                 user, _ = await user_repo.get_or_create(
                     session,
                     telegram_id=telegram_user.id,
@@ -44,22 +43,24 @@ class DbSessionMiddleware(BaseMiddleware):
                     last_name=telegram_user.last_name,
                 )
                 await ensure_trial_for_new_user(session, user, TRIAL_DAYS)
-                result = await session.execute(select(Subscription).where(Subscription.user_id == user.id))
+                result = await session.execute(
+                    select(Subscription).where(Subscription.user_id == user.id)
+                )
                 user_sub = result.scalar_one_or_none()
+
                 if not user.is_allowed and telegram_user.id not in SUPER_ADMIN_IDS:
                     if isinstance(event, Message):
                         await event.answer(BETA_MESSAGE)
                     elif isinstance(event, CallbackQuery):
                         await event.answer(BETA_MESSAGE, show_alert=True)
+                    elif isinstance(event, PreCheckoutQuery):
+                        await event.answer(ok=False, error_message=BETA_MESSAGE)
                     return
 
                 data["session"] = session
                 data["user"] = user
                 data["subscription"] = user_sub
                 return await handler(event, data)
-        except Exception as e:
-            logger.exception("DbSessionMiddleware error: %s", e)
-            data["session"] = None
-            data["user"] = None
-            data["subscription"] = None
-            return await handler(event, data)
+            except Exception:
+                logger.exception("DbSessionMiddleware error")
+                raise

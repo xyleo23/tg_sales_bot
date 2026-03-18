@@ -122,26 +122,28 @@ async def inviting_account_id(message: Message, state: FSMContext, user, session
     await message.answer("⏳ Инвайтинг запущен. Вы получите уведомление по завершении.")
 
     async def run_inviting(bot_instance: Bot):
-        async with async_session_maker() as sess:
-            aud = await audience_repo.get_by_id(sess, audience_id, user.id)
-            if not aud:
-                await bot_instance.send_message(user_telegram_id, "❌ Аудитория не найдена.")
-                return
-            user_ids = []
-            offset = 0
-            while True:
-                chunk = await audience_repo.get_members_chunk(sess, audience_id, offset=offset, limit=500)
-                if not chunk:
-                    break
-                user_ids.extend(m.telegram_id for m in chunk)
-                offset += len(chunk)
-            if not user_ids:
-                await bot_instance.send_message(user_telegram_id, "В аудитории 0 контактов.")
-                return
-            await activity_log_repo.add(sess, user.id, "inviting_start", f"aud:{audience_id}, chat:{chat}, count:{len(user_ids)}")
-        path = _session_path(account)
-        client = get_client(path, TG_API_ID, TG_API_HASH)
+        from html import escape
+        from loguru import logger
         try:
+            async with async_session_maker() as sess:
+                aud = await audience_repo.get_by_id(sess, audience_id, user.id)
+                if not aud:
+                    await bot_instance.send_message(user_telegram_id, "❌ Аудитория не найдена.")
+                    return
+                user_ids = []
+                offset = 0
+                while True:
+                    chunk = await audience_repo.get_members_chunk(sess, audience_id, offset=offset, limit=500)
+                    if not chunk:
+                        break
+                    user_ids.extend(m.telegram_id for m in chunk if m.telegram_id)
+                    offset += len(chunk)
+                if not user_ids:
+                    await bot_instance.send_message(user_telegram_id, "В аудитории 0 контактов с telegram_id.")
+                    return
+                await activity_log_repo.add(sess, user.id, "inviting_start", f"aud:{audience_id}, chat:{chat}, count:{len(user_ids)}")
+            path = _session_path(account)
+            client = get_client(path, TG_API_ID, TG_API_HASH)
             invited, failed = await invite_users_to_chat(client, chat, user_ids, delay_sec=INVITE_DELAY_SEC)
             await bot_instance.send_message(
                 user_telegram_id,
@@ -149,8 +151,11 @@ async def inviting_account_id(message: Message, state: FSMContext, user, session
                 reply_markup=main_menu_keyboard(),
             )
         except Exception as e:
-            await bot_instance.send_message(user_telegram_id, f"❌ Ошибка инвайтинга: {e}")
-        # Не закрывать session — bot_instance это общий экземпляр бота
+            logger.exception("run_inviting failed")
+            try:
+                await bot_instance.send_message(user_telegram_id, f"❌ Ошибка инвайтинга: {escape(str(e))}")
+            except Exception:
+                pass
 
     asyncio.create_task(run_inviting(bot))
 

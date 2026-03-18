@@ -1,6 +1,5 @@
-"""Админ-хендлеры: загрузка сессий и создание аудиторий."""
+"""Админ-хендлеры: загрузка сессий, аудиторий, управление доступом."""
 import csv
-import sys
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -13,29 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient
 from telethon.errors import AuthKeyUnregisteredError, SessionPasswordNeededError
 
-# Добавляем корень проекта в path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
-from bot.config import DATA_DIR, SUPER_ADMIN_IDS, SESSIONS_DIR, TG_API_ID, TG_API_HASH
+from bot.config import DATA_DIR, SESSIONS_DIR, SUPER_ADMIN_IDS, TG_API_HASH, TG_API_ID
 from bot.states import AdminState
 from core.db.models import Account, Audience, AudienceMember, User
 
 admin_router = Router(name="admin")
-
-
-def is_super_admin(user_id: int) -> bool:
-    return user_id in SUPER_ADMIN_IDS
-
-
-# --- /add_session ---
-
-
-@admin_router.message(F.text.in_(["/cancel", "Отмена"]))
-async def cmd_cancel(message: Message, state: FSMContext) -> None:
-    current = await state.get_state()
-    if current:
-        await state.clear()
-        await message.answer("Действие отменено.")
 
 
 @admin_router.message(F.text == "/add_session", F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
@@ -46,7 +27,7 @@ async def cmd_add_session(message: Message, state: FSMContext) -> None:
 
 @admin_router.message(AdminState.waiting_for_session, F.document)
 async def process_session_document(
-    message: Message, state: FSMContext, bot: Bot
+    message: Message, state: FSMContext, bot: Bot, session: AsyncSession, user
 ) -> None:
     doc: Document = message.document
     if not doc.file_name or not doc.file_name.lower().endswith(".session"):
@@ -83,7 +64,6 @@ async def process_session_document(
         if not await client.is_user_authorized():
             await client.disconnect()
             session_path.unlink(missing_ok=True)
-            # Удаляем также .session-journal если есть
             for p in session_path.parent.glob(session_path.name + "*"):
                 p.unlink(missing_ok=True)
             await state.clear()
@@ -96,7 +76,10 @@ async def process_session_document(
         me = await client.get_me()
         await client.disconnect()
     except (AuthKeyUnregisteredError, SessionPasswordNeededError) as e:
-        await client.disconnect()
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
         session_path.unlink(missing_ok=True)
         for p in session_path.parent.glob(session_path.name + "*"):
             p.unlink(missing_ok=True)
@@ -104,7 +87,10 @@ async def process_session_document(
         await message.answer(f"❌ Сессия невалидна: {e}")
         return
     except Exception as e:
-        await client.disconnect()
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
         session_path.unlink(missing_ok=True)
         for p in session_path.parent.glob(session_path.name + "*"):
             p.unlink(missing_ok=True)
@@ -112,46 +98,26 @@ async def process_session_document(
         await message.answer(f"❌ Ошибка проверки сессии: {e}")
         return
 
-    # Сохраняем в БД (нужна сессия)
-    from core.db.session import async_session_factory
-
-    async with async_session_factory() as db:
-        result = await db.execute(
-            select(User).where(User.telegram_id == message.from_user.id)
-        )
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username,
-                first_name=message.from_user.first_name,
-            )
-            db.add(user)
-            await db.flush()
-
-        account = Account(
-            user_id=user.id,
-            name=me.first_name or "",
-            username=me.username or None,
-            phone=me.phone or None,
-            session_filename=safe_name,
-        )
-        db.add(account)
-        await db.commit()
+    account = Account(
+        user_id=user.id,
+        name=me.first_name or "",
+        username=me.username or None,
+        phone=me.phone or None,
+        session_filename=safe_name,
+    )
+    session.add(account)
+    await session.commit()
 
     await state.clear()
     username_display = f"@{me.username}" if me.username else (me.first_name or "без имени")
     await message.answer(
-        f"✅ Аккаунт {username_display} успешно добавлен и готов к масслукингу!"
+        f"✅ Аккаунт {username_display} успешно добавлен!"
     )
 
 
 @admin_router.message(AdminState.waiting_for_session)
 async def process_session_other(message: Message) -> None:
     await message.answer("Пришлите документ с расширением .session или /cancel для отмены.")
-
-
-# --- /add_audience ---
 
 
 @admin_router.message(F.text == "/add_audience", F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
@@ -165,7 +131,7 @@ async def cmd_add_audience(message: Message, state: FSMContext) -> None:
 
 @admin_router.message(AdminState.waiting_for_csv, F.document)
 async def process_csv_document(
-    message: Message, state: FSMContext, bot: Bot
+    message: Message, state: FSMContext, bot: Bot, session: AsyncSession, user
 ) -> None:
     doc: Document = message.document
     if not doc.file_name or not doc.file_name.lower().endswith(".csv"):
@@ -195,58 +161,38 @@ async def process_csv_document(
     rows = list(reader)
 
     audience_name = Path(doc.file_name or "audience").stem or datetime.now().strftime("%Y-%m-%d_%H-%M")
+
+    audience = Audience(user_id=user.id, name=audience_name, source="csv")
+    session.add(audience)
+    await session.flush()
+
     added = 0
+    for row in rows:
+        if not row:
+            continue
+        username = row[0].strip() if len(row) > 0 else None
+        phone = row[1].strip() if len(row) > 1 else None
+        try:
+            telegram_id = int(row[2].strip()) if len(row) > 2 and row[2].strip() else None
+        except (ValueError, TypeError):
+            telegram_id = None
 
-    from core.db.session import async_session_factory
+        if not username and not phone and not telegram_id:
+            continue
 
-    async with async_session_factory() as db:
-        result = await db.execute(
-            select(User).where(User.telegram_id == message.from_user.id)
+        member = AudienceMember(
+            audience_id=audience.id,
+            username=username or None,
+            phone=phone or None,
+            telegram_id=telegram_id,
         )
-        user = result.scalar_one_or_none()
-        if not user:
-            user = User(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username,
-                first_name=message.from_user.first_name,
-            )
-            db.add(user)
-            await db.flush()
+        session.add(member)
+        added += 1
 
-        audience = Audience(
-            user_id=user.id,
-            name=audience_name,
-            source="csv",
-        )
-        db.add(audience)
-        await db.flush()
-
-        for row in rows:
-            if not row:
-                continue
-            username = row[0].strip() if len(row) > 0 else None
-            phone = row[1].strip() if len(row) > 1 else None
-            try:
-                telegram_id = int(row[2].strip()) if len(row) > 2 and row[2].strip() else None
-            except (ValueError, TypeError):
-                telegram_id = None
-
-            if not username and not phone and not telegram_id:
-                continue
-
-            member = AudienceMember(
-                audience_id=audience.id,
-                username=username or None,
-                phone=phone or None,
-                telegram_id=telegram_id,
-            )
-            db.add(member)
-            added += 1
-
-        await db.commit()
+    await session.commit()
 
     await state.clear()
-    await message.answer(f"✅ Аудитория создана! Добавлено {added} пользователей.")
+    await message.answer(f"✅ Аудитория «{audience_name}» создана! Добавлено {added} пользователей.")
 
 
 @admin_router.message(AdminState.waiting_for_csv)
@@ -254,14 +200,11 @@ async def process_csv_other(message: Message) -> None:
     await message.answer("Пришлите CSV файл или /cancel для отмены.")
 
 
-# --- /add_user и /del_user ---
-
-
 @admin_router.message(F.text.startswith("/add_user"), F.from_user.id.in_(set(SUPER_ADMIN_IDS)))
 async def cmd_add_user(message: Message, session: AsyncSession) -> None:
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("Использование: /add_user <telegram_id>")
+        await message.answer("Использование: /add_user &lt;telegram_id&gt;")
         return
     try:
         target_tg_id = int(parts[1])
@@ -270,17 +213,17 @@ async def cmd_add_user(message: Message, session: AsyncSession) -> None:
         return
 
     result = await session.execute(select(User).where(User.telegram_id == target_tg_id))
-    user = result.scalar_one_or_none()
-    if not user:
+    db_user = result.scalar_one_or_none()
+    if not db_user:
         await message.answer(
-            f"❌ Пользователь с Telegram ID {target_tg_id} не найден в базе данных.\n"
-            "Пользователь должен хотя бы раз написать боту, чтобы появиться в БД."
+            f"❌ Пользователь с Telegram ID {target_tg_id} не найден.\n"
+            "Пользователь должен хотя бы раз написать боту."
         )
         return
 
-    user.is_allowed = True
+    db_user.is_allowed = True
     await session.commit()
-    name = user.first_name or user.username or str(target_tg_id)
+    name = db_user.first_name or db_user.username or str(target_tg_id)
     await message.answer(f"✅ Доступ выдан: {name} (ID: {target_tg_id})")
 
 
@@ -288,7 +231,7 @@ async def cmd_add_user(message: Message, session: AsyncSession) -> None:
 async def cmd_del_user(message: Message, session: AsyncSession) -> None:
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("Использование: /del_user <telegram_id>")
+        await message.answer("Использование: /del_user &lt;telegram_id&gt;")
         return
     try:
         target_tg_id = int(parts[1])
@@ -301,12 +244,12 @@ async def cmd_del_user(message: Message, session: AsyncSession) -> None:
         return
 
     result = await session.execute(select(User).where(User.telegram_id == target_tg_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        await message.answer(f"❌ Пользователь с Telegram ID {target_tg_id} не найден в базе данных.")
+    db_user = result.scalar_one_or_none()
+    if not db_user:
+        await message.answer(f"❌ Пользователь с Telegram ID {target_tg_id} не найден.")
         return
 
-    user.is_allowed = False
+    db_user.is_allowed = False
     await session.commit()
-    name = user.first_name or user.username or str(target_tg_id)
+    name = db_user.first_name or db_user.username or str(target_tg_id)
     await message.answer(f"✅ Доступ отозван: {name} (ID: {target_tg_id})")

@@ -130,27 +130,32 @@ async def upload_got_name(message: Message, state: FSMContext, user, session):
 async def upload_got_file(
     message: Message, state: FSMContext, user, session
 ):
-    if message.document.file_name and not message.document.file_name.endswith(".session"):
+    fname = message.document.file_name or ""
+    if fname and not fname.endswith(".session"):
         await message.answer("Нужен именно файл с расширением .session. Отправьте правильный файл или /cancel")
         return
     data = await state.get_data()
     account_name = data.get("account_name", "account")
     user_db_id = data.get("user_db_id", user.id)
 
-    # Создаём запись с временным именем файла, потом обновим после сохранения
+    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     acc = await account_repo.create(session, user_db_id, account_name, f"pending_{user_db_id}.session")
     session_filename = f"{user_db_id}_{acc.id}.session"
     acc.session_filename = session_filename
     await session.commit()
     await session.refresh(acc)
 
-    file_id = message.document.file_id
-    bot = message.bot
-    file = await bot.get_file(file_id)
     path = SESSIONS_DIR / session_filename
-    await bot.download_file(file.file_path, path)
+    try:
+        bot = message.bot
+        file = await bot.get_file(message.document.file_id)
+        await bot.download_file(file.file_path, path)
+    except Exception as e:
+        await account_repo.delete(session, acc.id, user_db_id)
+        await state.clear()
+        await message.answer(f"❌ Ошибка загрузки файла: {e}")
+        return
 
-    # Проверка сессии
     if TG_API_ID and TG_API_HASH:
         ok, err = await check_session_valid(path, TG_API_ID, TG_API_HASH)
         if not ok:
@@ -165,8 +170,7 @@ async def upload_got_file(
     await message.answer(
         f"✅ Аккаунт <b>{account_name}</b> добавлен и проверен.\n"
         "Раздел «Аккаунты» — список всех аккаунтов.",
-        parse_mode="HTML",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(user),
     )
 
 

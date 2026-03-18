@@ -18,7 +18,6 @@ from bot.utils import is_telethon_configured
 from core.db.session import async_session_maker
 from core.db.repos import audience_repo, account_repo, activity_log_repo
 from core.db.models import Proxy
-from core.clients.parser import parse_chat_members
 from core.telegram.client_manager import get_client
 from core.telegram.parser import parse_by_messages, normalize_chat_input
 from core.auth import has_subscription_access
@@ -151,7 +150,7 @@ async def parser_members_chat(message: Message, state: FSMContext, user, session
                     r = await sess.execute(select(Proxy).where(Proxy.id == account.proxy_id))
                     proxy = r.scalar_one_or_none()
 
-            # expire_on_commit=False: column values доступны вне сессии
+            from core.clients.parser import parse_chat_members
             members = await parse_chat_members(account, proxy, chat)
 
             if not members:
@@ -181,7 +180,11 @@ async def parser_members_chat(message: Message, state: FSMContext, user, session
                 )
 
         except Exception as exc:
-            await bot.send_message(telegram_id, f"❌ Ошибка парсинга: {exc}")
+            from html import escape
+            try:
+                await bot.send_message(telegram_id, f"❌ Ошибка парсинга: {escape(str(exc))}")
+            except Exception:
+                pass
         finally:
             if txt_path and txt_path.exists():
                 txt_path.unlink(missing_ok=True)
@@ -263,37 +266,46 @@ async def parser_messages_keywords(message: Message, state: FSMContext, user, se
     await message.answer("⏳ Парсинг по сообщениям запущен. Ожидайте уведомление.")
 
     async def run_parser():
-        async with async_session_maker() as sess:
-            accounts = await account_repo.list_by_user(sess, user_db_id)
-            account = next((a for a in accounts if a.status == "active"), None)
-            if not account:
-                await bot.send_message(user.telegram_id, "❌ Нет активного аккаунта.")
-                return
-            path = _get_session_path(account)
-            client = get_client(path, TG_API_ID, TG_API_HASH)
+        from html import escape
+        from loguru import logger
+        try:
+            async with async_session_maker() as sess:
+                accounts = await account_repo.list_by_user(sess, user_db_id)
+                account = next((a for a in accounts if a.status == "active"), None)
+                if not account:
+                    await bot.send_message(user.telegram_id, "❌ Нет активного аккаунта.")
+                    return
+                path = _get_session_path(account)
+                client = get_client(path, TG_API_ID, TG_API_HASH)
+                try:
+                    members = await parse_by_messages(client, chat, keywords, limit_messages=5000)
+                except Exception as e:
+                    await bot.send_message(user.telegram_id, f"❌ Ошибка парсинга: {escape(str(e))}")
+                    return
+                aud = await audience_repo.create(sess, user_db_id, audience_name, "parser_messages", chat)
+                added = await audience_repo.add_members(
+                    sess, aud.id,
+                    [(m[0], m[1], m[2], m[3]) for m in members],
+                )
+                await activity_log_repo.add(sess, user_db_id, "parser_messages", f"aud:{audience_name}, chat:{chat}, count:{added}")
+                await bot.send_message(
+                    user.telegram_id,
+                    f"✅ Аудитория «{audience_name}» создана.\nСобрано контактов: {added}.",
+                    reply_markup=main_menu_keyboard(),
+                )
+        except Exception as e:
+            logger.exception("run_parser (messages) failed")
             try:
-                members = await parse_by_messages(client, chat, keywords, limit_messages=5000)
-            except Exception as e:
-                await bot.send_message(user.telegram_id, f"❌ Ошибка парсинга: {e}")
-                return
-            aud = await audience_repo.create(sess, user_db_id, audience_name, "parser_messages", chat)
-            added = await audience_repo.add_members(
-                sess, aud.id,
-                [(m[0], m[1], m[2], m[3]) for m in members],
-            )
-            await activity_log_repo.add(sess, user_db_id, "parser_messages", f"aud:{audience_name}, chat:{chat}, count:{added}")
-            await bot.send_message(
-                user.telegram_id,
-                f"✅ Аудитория «{audience_name}» создана.\nСобрано контактов: {added}.",
-                reply_markup=main_menu_keyboard(),
-            )
+                await bot.send_message(user.telegram_id, f"❌ Ошибка: {escape(str(e))}")
+            except Exception:
+                pass
 
     asyncio.create_task(run_parser())
 
 
-# Сброс FSM при отмене в любом состоянии парсера
 @router.message(F.text == "/cancel")
 async def cancel_parser(message: Message, state: FSMContext):
-    if await state.get_state() and "parser" in (await state.get_state() or "").lower():
+    current = await state.get_state()
+    if current and "parser" in current.lower():
         await state.clear()
         await message.answer("Отменено.", reply_markup=main_menu_keyboard())

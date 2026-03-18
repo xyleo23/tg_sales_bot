@@ -71,23 +71,30 @@ async def warming_account_ids(message: Message, state: FSMContext, user, session
     await message.answer("⏳ Прогрев запущен. Ожидайте уведомление.")
 
     async def run_warming():
-        results = []
-        async with async_session_maker() as sess:
-            for aid in valid:
-                acc = await account_repo.get_by_id(sess, aid, user.id)
-                if not acc:
-                    continue
-                path = _session_path(acc)
-                ok, msg = await warm_account(path, TG_API_ID, TG_API_HASH)
-                results.append(f"• {acc.name}: {msg}")
-            await activity_log_repo.add(sess, user.id, "warming", f"accs:{valid}, count:{len(results)}")
-        text_result = "\n".join(results)
-        await bot.send_message(
-            user_telegram_id,
-            f"🔥 <b>Прогрев завершён</b>\n\n{text_result}",
-            parse_mode="HTML",
-            reply_markup=main_menu_keyboard(),
-        )
-        # Не закрывать bot.session — bot общий с диспетчером
+        from html import escape
+        from loguru import logger
+        try:
+            results = []
+            async with async_session_maker() as sess:
+                for aid in valid:
+                    acc = await account_repo.get_by_id(sess, aid, user.id)
+                    if not acc:
+                        continue
+                    path = _session_path(acc)
+                    ok, msg = await warm_account(path, TG_API_ID, TG_API_HASH)
+                    results.append(f"• {acc.name}: {msg}")
+                await activity_log_repo.add(sess, user.id, "warming", f"accs:{valid}, count:{len(results)}")
+            text_result = "\n".join(results) or "Нет результатов"
+            await bot.send_message(
+                user_telegram_id,
+                f"🔥 <b>Прогрев завершён</b>\n\n{text_result}",
+                reply_markup=main_menu_keyboard(),
+            )
+        except Exception as e:
+            logger.exception("run_warming failed")
+            try:
+                await bot.send_message(user_telegram_id, f"❌ Ошибка прогрева: {escape(str(e))}")
+            except Exception:
+                pass
 
     asyncio.create_task(run_warming())

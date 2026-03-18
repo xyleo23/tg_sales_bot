@@ -36,8 +36,8 @@ async def send_to_user(
     except PeerFloodError:
         return False, "flood"
     except FloodWaitError as e:
-        logger.warning(f"FloodWait {e.value}s")
-        await asyncio.sleep(e.value)
+        logger.warning(f"FloodWait {e.seconds}s")
+        await asyncio.sleep(e.seconds)
         return await send_to_user(client, user_id, text)
     except Exception as e:
         logger.exception("send_to_user failed")

@@ -51,8 +51,8 @@ async def invite_users_to_chat(
             except UserPrivacyRestrictedError:
                 failed += len(input_users)
             except FloodWaitError as e:
-                logger.warning(f"Invite FloodWait {e.value}s")
-                await asyncio.sleep(e.value)
+                logger.warning(f"Invite FloodWait {e.seconds}s")
+                await asyncio.sleep(e.seconds)
                 try:
                     await client(InviteToChannelRequest(entity, input_users))
                     invited += len(input_users)

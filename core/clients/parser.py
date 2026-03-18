@@ -1,17 +1,9 @@
 """Pyrogram-based парсер участников чата."""
 import asyncio
-import re
 from pathlib import Path
 from typing import Optional
 
 from loguru import logger
-from pyrogram import Client
-from pyrogram.errors import (
-    FloodWait,
-    UserAlreadyParticipant,
-    ChatAdminRequired,
-    ChannelPrivate,
-)
 
 from core.db.models import Account, Proxy
 from core.clients.checker import _build_proxy_dict
@@ -34,18 +26,12 @@ async def parse_chat_members(
 ) -> list[str]:
     """Собрать участников чата через Pyrogram-клиент.
 
-    Параметры:
-        account   — аккаунт с .session файлом
-        proxy     — прокси (или None)
-        chat_link — username, t.me-ссылка или ID чата
-
-    Возвращает список строк:
-        "@username"      — если у пользователя есть username
-        "<telegram_id>"  — если username нет
-
-    Боты и удалённые аккаунты не включаются в результат.
-    Raises при критических ошибках (FloodWait, ChannelPrivate и т.д.).
+    Возвращает список строк: "@username" или "<telegram_id>".
+    Боты и удалённые аккаунты не включаются.
     """
+    from pyrogram import Client
+    from pyrogram.errors import FloodWait, ChatAdminRequired, ChannelPrivate, UserAlreadyParticipant
+
     from bot.config import TG_API_ID, TG_API_HASH
 
     session_path = _resolve_session_path(account)
@@ -71,7 +57,6 @@ async def parse_chat_members(
     try:
         await client.start()
 
-        # Вступаем в чат, если нужно; игнорируем ошибки для открытых чатов
         try:
             await client.join_chat(chat_link)
             await asyncio.sleep(1)

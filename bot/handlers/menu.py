@@ -1,14 +1,12 @@
-"""Хендлеры меню: инструкции, сообщество, покупка аккаунта, заглушки магазина."""
-
+"""Хендлеры меню: инструкции, сообщество, покупка аккаунта, заглушки."""
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot.handlers.start import MAIN_MENU_TEXT
 from bot.keyboards import main_menu_keyboard
 
 router = Router()
-
-# --- Клавиатуры ---
 
 
 def instructions_keyboard() -> InlineKeyboardMarkup:
@@ -39,7 +37,12 @@ def buy_account_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-# --- Инструкции ---
+async def _safe_edit_or_answer(callback: CallbackQuery, text: str, reply_markup=None) -> None:
+    """Edit message if possible, otherwise send a new one."""
+    try:
+        await callback.message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest:
+        await callback.message.answer(text, reply_markup=reply_markup)
 
 
 @router.callback_query(F.data == "menu_instructions")
@@ -52,15 +55,8 @@ async def menu_instructions(callback: CallbackQuery) -> None:
         "-  Настройка масслукинга и парсера\n\n"
         "<i>Перейдите в наш закрытый канал с инструкциями и видео-уроками:</i>"
     )
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=instructions_keyboard(),
-    )
+    await _safe_edit_or_answer(callback, text, reply_markup=instructions_keyboard())
     await callback.answer()
-
-
-# --- Сообщество ---
 
 
 @router.callback_query(F.data == "menu_community")
@@ -72,15 +68,8 @@ async def menu_community(callback: CallbackQuery) -> None:
         "-  Помогаем с настройкой бота\n"
         "-  Обсуждаем лимиты Telegram\n\n"
     )
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=community_keyboard(),
-    )
+    await _safe_edit_or_answer(callback, text, reply_markup=community_keyboard())
     await callback.answer()
-
-
-# --- Купить аккаунт ---
 
 
 @router.callback_query(F.data == "menu_buy_account")
@@ -91,44 +80,40 @@ async def menu_buy_account(callback: CallbackQuery) -> None:
         "Стоимость одного аккаунта: 500 рублей\n\n"
         "<i>При покупке аккаунта вы получаете сам аккаунт и прокси (IPv4, socks5).</i>"
     )
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=buy_account_keyboard(),
-    )
+    await _safe_edit_or_answer(callback, text, reply_markup=buy_account_keyboard())
     await callback.answer()
 
 
-# --- Назад в главное меню ---
-
-
-@router.callback_query(F.data == "back_to_main")
+@router.callback_query(F.data.in_({"back_to_main", "menu_back"}))
 async def back_to_main_handler(callback: CallbackQuery, user=None) -> None:
-    """Возврат в главное меню по кнопке «⬅️ Назад»."""
-    await callback.message.edit_text(
+    await callback.answer()
+    await _safe_edit_or_answer(
+        callback,
         MAIN_MENU_TEXT,
         reply_markup=main_menu_keyboard(user),
     )
-    await callback.answer()
 
 
-@router.callback_query(F.data == "menu_back")
-async def menu_back(callback: CallbackQuery) -> None:
-    # Возврат в главное меню — текст и клавиатуру задаёт главный модуль (start/menu).
-    # Здесь только закрываем уведомление; обработку menu_back можно вынести в общий роутер.
-    await callback.answer()
-    # Опционально: отредактировать сообщение обратно на главное меню (если знаем текст/клавиатуру).
-    # await callback.message.edit_text(MAIN_MENU_TEXT, parse_mode="HTML", reply_markup=main_menu_keyboard())
+@router.callback_query(F.data == "menu_convert")
+async def menu_convert(callback: CallbackQuery) -> None:
+    await callback.answer("🔢 Конвертация номеров — в разработке", show_alert=True)
 
 
-# --- Заглушки магазина ---
+@router.callback_query(F.data == "menu_calls")
+async def menu_calls(callback: CallbackQuery) -> None:
+    await callback.answer("📞 Звонки — в разработке", show_alert=True)
+
+
+@router.callback_query(F.data == "menu_autoposting")
+async def menu_autoposting(callback: CallbackQuery) -> None:
+    await callback.answer("📝 Автопостинг — в разработке", show_alert=True)
 
 
 @router.callback_query(F.data == "shop_buy")
 async def shop_buy(callback: CallbackQuery) -> None:
-    await callback.answer("В разработке", show_alert=True)
+    await callback.answer("🛒 Магазин — в разработке", show_alert=True)
 
 
 @router.callback_query(F.data == "shop_add_balance")
 async def shop_add_balance(callback: CallbackQuery) -> None:
-    await callback.answer("В разработке", show_alert=True)
+    await callback.answer("💰 Пополнение баланса — в разработке", show_alert=True)

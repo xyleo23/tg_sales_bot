@@ -1,16 +1,25 @@
 """
 Репозитории: пользователь и подписка.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from sqlalchemy import select
+
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from datetime import timezone
-from core.db.models import User, Subscription, Account, Audience, AudienceMember, Mailing, ActivityLog
-from core.db.models import USER_ROLE_USER, USER_ROLE_TESTER, USER_ROLE_ADMIN, USER_ROLE_SUPER_ADMIN
-from core.db.session import async_session_maker
-from sqlalchemy import select, func
+from core.db.models import (
+    USER_ROLE_ADMIN,
+    USER_ROLE_SUPER_ADMIN,
+    USER_ROLE_TESTER,
+    USER_ROLE_USER,
+    Account,
+    ActivityLog,
+    Audience,
+    AudienceMember,
+    Mailing,
+    Subscription,
+    User,
+)
 
 
 def _resolve_role(telegram_id: int) -> str:
@@ -252,19 +261,22 @@ class AudienceRepo:
         self,
         session: AsyncSession,
         audience_id: int,
-        members: list[tuple[int, Optional[str], Optional[str], Optional[str]]],
+        members: list[tuple[Optional[int], Optional[str], Optional[str], Optional[str]]],
     ) -> int:
         """members: list of (telegram_id, username, first_name, last_name). Возвращает количество добавленных."""
         added = 0
         for telegram_id, username, first_name, last_name in members:
-            existing = await session.execute(
-                select(AudienceMember).where(
-                    AudienceMember.audience_id == audience_id,
-                    AudienceMember.telegram_id == telegram_id,
-                )
-            )
-            if existing.scalar_one_or_none():
+            if not telegram_id and not username:
                 continue
+            if telegram_id:
+                existing = await session.execute(
+                    select(AudienceMember).where(
+                        AudienceMember.audience_id == audience_id,
+                        AudienceMember.telegram_id == telegram_id,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    continue
             m = AudienceMember(
                 audience_id=audience_id,
                 telegram_id=telegram_id,

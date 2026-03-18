@@ -4,8 +4,6 @@ from typing import Optional
 from urllib.parse import urlparse
 
 from loguru import logger
-from pyrogram import Client
-from pyrogram.errors import AuthKeyUnregistered, UserDeactivated, UserDeactivatedBan
 
 from core.db.models import Account, Proxy
 
@@ -38,10 +36,14 @@ def _build_proxy_dict(proxy: Proxy) -> Optional[dict]:
 
     parts = ps.split(":")
     if len(parts) >= 2:
+        try:
+            port = int(parts[1])
+        except ValueError:
+            return None
         result = {
             "scheme": proxy.type or "socks5",
             "hostname": parts[0],
-            "port": int(parts[1]),
+            "port": port,
         }
         if len(parts) >= 4:
             result["username"] = parts[2]
@@ -59,6 +61,9 @@ async def check_account(account: Account, proxy: Optional[Proxy] = None) -> str:
         'banned'                — аккаунт заблокирован (UserDeactivated*)
         'auth_key_unregistered' — сессия недействительна / устарела
     """
+    from pyrogram import Client
+    from pyrogram.errors import AuthKeyUnregistered, UserDeactivated, UserDeactivatedBan
+
     from bot.config import TG_API_ID, TG_API_HASH, SESSIONS_DIR
 
     if account.session_file_path:
@@ -72,7 +77,6 @@ async def check_account(account: Account, proxy: Optional[Proxy] = None) -> str:
         logger.warning(f"check_account [{account.id}]: файл не найден — {session_path}")
         return "auth_key_unregistered"
 
-    # Pyrogram принимает путь без расширения .session
     session_name = str(session_path.with_suffix(""))
 
     client_kwargs: dict = {

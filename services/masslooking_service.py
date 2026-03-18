@@ -83,6 +83,8 @@ async def run_masslooking_task(
             return
 
         for member in members:
+            if not member.telegram_id and not member.username:
+                continue
             while True:
                 try:
                     entity_identifier = member.username if member.username else PeerUser(member.telegram_id)
