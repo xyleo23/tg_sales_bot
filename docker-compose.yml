@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   bot:
     build: .
@@ -21,8 +19,6 @@ services:
       POSTGRES_USER: tg_bot
       POSTGRES_PASSWORD: changeme
       POSTGRES_DB: tg_sales
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
